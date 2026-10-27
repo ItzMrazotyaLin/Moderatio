@@ -1,0 +1,78 @@
+# ==============================================================================
+#                      Moderatio Messages Configuration
+#         Поддержка цветов Kyori MiniMessage (<red>, <bold>) и амперсандов &
+# ==============================================================================
+
+prefix: "<gradient:#38ef7d:#11998e>[Moderatio]</gradient> <gray>»</gray> "
+
+staff-mode:
+  enabled: "<green>Staff Mode активирован! Включены полёт и полная неуязвимость."
+  disabled: "<red>Staff Mode отключён. Стандартные флаги восстановлены."
+  already-enabled: "<yellow>Вы уже находитесь в режиме Staff Mode!"
+  not-enabled: "<yellow>Вы не находитесь в режиме Staff Mode!"
+  world-restored: "<aqua>Staff Mode сохранён и синхронизирован с новым миром.</aqua>"
+
+protection:
+  cannot-break: "<red>Вы не можете ломать блоки в режиме Staff Mode!"
+  cannot-place: "<red>Вы не можете ставить блоки в режиме Staff Mode!"
+  cannot-interact: "<red>Взаимодействие с блоками заблокировано в Staff Mode."
+  cannot-drop: "<red>Вы не можете выбрасывать предметы в Staff Mode."
+  cannot-pickup: "<red>Подбор предметов заблокирован в Staff Mode."
+  cannot-damage: "<red>Нанесение и получение урона отключены в Staff Mode!"
+
+dialog:
+  main-title: "<gradient:#38ef7d:#11998e>Модерация: {target}</gradient>"
+  main-body: |
+    <gray>Игрок:</gray> <white><bold>{target}</bold></white>
+    <gray>Пинг:</gray> <yellow>{ping} ms</yellow>
+    <gray>Здоровье:</gray> <red>{health}/{max_health} ❤</red>
+    <gray>Режим:</gray> <aqua>{gamemode}</aqua>
+    <gray>Текущий мир:</gray> <green>{world}</green>
+    <dark_gray>Нажмите на необходимое действие ниже:</dark_gray>
+
+  btn-ban: "<red>🔨 Наказать (Бан)"
+  btn-mute: "<yellow>🔇 Замутить"
+  btn-troll: "<light_purple>⚡ Троллинг / Действия"
+  btn-exit-staff: "<dark_red>✖ Выйти из Staff"
+  btn-close: "<gray>✖ Закрыть"
+  btn-back: "<gray>⬅ Назад"
+
+  ban-title: "<red>Выбор шаблона бана: {target}</red>"
+  ban-body: "<gray>Выберите готовый шаблон наказания или задайте свой срок:</gray>"
+  btn-custom-ban: "<gold>✍ Своя причина / срок"
+  custom-ban-title: "<gold>Своя блокировка: {target}</gold>"
+  input-reason-label: "Причина бана"
+  input-duration-label: "Срок бана (например: 7d, 24h, perm)"
+  btn-apply-ban: "<red>Подтвердить и забанить"
+
+  mute-title: "<yellow>Выбор шаблона мута: {target}</yellow>"
+  mute-body: "<gray>Выберите готовый шаблон блокировки чата для игрока:</gray>"
+
+  troll-title: "<light_purple>Действия над игроком: {target}</light_purple>"
+  troll-body: "<gray>Быстрые действия и визуальные эффекты (без летального урона):</gray>"
+  btn-troll-launch: "<aqua>🚀 Подбросить вверх"
+  btn-troll-freeze: "<blue>❄ Переключить заморозку (Фриз)"
+  btn-troll-explosion: "<yellow>💥 Фейковый взрыв"
+  btn-troll-lightning: "<gold>⚡ Фейковая молния"
+
+punishment:
+  banned-success: "<green>Игрок <white>{target}</white> успешно заблокирован на <yellow>{duration}</yellow>! Причина: <red>{reason}</red>"
+  muted-success: "<green>Наказание (мут) отправлено на выполнение для игрока <white>{target}</white>!"
+  troll-launch: "<aqua>Игрок <white>{target}</white> подброшен в воздух!"
+  troll-freeze-on: "<blue>Игрок <white>{target}</white> успешно заморожен на месте!"
+  troll-freeze-off: "<green>Игрок <white>{target}</white> разморожен!"
+  troll-explosion: "<yellow>Возле игрока <white>{target}</white> сработал фейковый взрыв!"
+  troll-lightning: "<gold>В игрока <white>{target}</white> ударила визуальная молния!"
+  no-troll-permission: "<red>У вас нет доступа к функциям троллинга!"
+
+general:
+  no-permission: "<red>У вас недостаточно прав для выполнения этой команды!"
+  only-players: "<red>Команда доступна только для игроков сервера!"
+  player-not-found: "<red>Указанный игрок не найден либо находится в оффлайне!"
+  reload-success: "<green>Конфигурация плагина Moderatio успешно перезагружена!"
+  info: |
+    <gradient:#38ef7d:#11998e><bold>Moderatio</bold></gradient> <gray>v{version}</gray>
+    <gray>Разработчик:</gray> <white>{author}</white>
+    <gray>Платформа:</gray> <white>Purpur 1.21.6 (Java 21)</white>
+    <gray>Модераторов в Staff Mode:</gray> <green>{active_staff}</green>
+    <gray>Команда перезагрузки:</gray> <yellow>/moderatio reload</yellow>

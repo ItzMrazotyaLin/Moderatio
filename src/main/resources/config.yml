@@ -1,0 +1,79 @@
+# ==============================================================================
+#                      Moderatio Configuration File
+#                     Purpur 1.21.6 / Paper Dialog API
+# ==============================================================================
+
+# Общие настройки Staff Mode
+settings:
+  # Скорость полёта модератора (по умолчанию 0.1)
+  fly-speed: 0.1
+  # Сохранять ли режим Staff при смене миров (Multiverse persistence)
+  persist-across-worlds: true
+
+# Настройки системы троллинга и быстрых действий над нарушителями
+trolling:
+  # Включен ли белый список?
+  # Если false — троллинг доступен всем модераторам с правом moderatio.staff.
+  # Если true — только игрокам/UUID из списка ниже.
+  whitelist-enabled: false
+  whitelist:
+    - "itzmr"
+    - "00000000-0000-0000-0000-000000000000"
+
+# Режим исполнения блокировок:
+# 'NATIVE'  - исполнение через Purpur / Paper API (target.ban(reason, duration, source))
+# 'COMMAND' - исполнение через консольную команду (для сторонних плагинов банов: LiteBans, LibertyBans и др.)
+ban-system:
+  mode: "NATIVE"
+  console-command: "ban {target} {duration} {reason}"
+
+# Готовые шаблоны блокировок (отображаются в Dialog API)
+ban-templates:
+  cheats:
+    title: "<red>Читы"
+    duration: "30d"
+    reason: "Использование читов / запрещённого ПО"
+  insult_family:
+    title: "<yellow>Оскорбление родных"
+    duration: "7d"
+    reason: "Упоминание/оскорбление родственников"
+  griefing:
+    title: "<gold>Гриферство"
+    duration: "14d"
+    reason: "Гриферство и умышленная порча чужого имущества"
+  rule_violation:
+    title: "<red>Грубое нарушение"
+    duration: "3d"
+    reason: "Грубое нарушение правил сервера"
+  adverts:
+    title: "<dark_red>Реклама"
+    duration: "perm"
+    reason: "Реклама сторонних ресурсов и проектов"
+
+# Готовые шаблоны мутов (блокировки чата)
+mute-templates:
+  flood:
+    title: "<yellow>Флуд / Спам"
+    duration: "1h"
+    reason: "Флуд и спам в общем чате"
+    command: "mute {target} 1h Флуд и спам"
+  caps:
+    title: "<gold>Капс"
+    duration: "30m"
+    reason: "Злоупотребление верхним регистром"
+    command: "mute {target} 30m Капс"
+  toxic:
+    title: "<red>Оскорбления"
+    duration: "2h"
+    reason: "Оскорбление игроков и провокации"
+    command: "mute {target} 2h Оскорбления игроков"
+  ad:
+    title: "<dark_red>Реклама в чате"
+    duration: "1d"
+    reason: "Реклама сторонних ресурсов"
+    command: "mute {target} 1d Реклама в чате"
+
+# Настройки оформления диалогов Dialog API
+dialog:
+  # Ширина кнопок (в пикселях интерфейса)
+  button-width: 220

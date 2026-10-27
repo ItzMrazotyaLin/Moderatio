@@ -1,0 +1,14 @@
+name: Moderatio
+version: '${version}'
+main: org.itzmr.moderatio.Moderatio
+api-version: '1.21'
+author: itzmr
+description: Modern Staff Mode & Moderation Dialog Plugin for Purpur 1.21.6
+
+permissions:
+  moderatio.staff:
+    description: Allows entering Staff Mode and viewing moderation dialogs
+    default: op
+  moderatio.admin:
+    description: Allows reloading and configuring the plugin
+    default: op
