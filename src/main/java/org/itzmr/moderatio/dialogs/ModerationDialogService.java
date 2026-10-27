@@ -50,6 +50,57 @@ public class ModerationDialogService {
     }
 
     /**
+     * Opens the general staff mode menu dialog (opened via SHIFT + RMB).
+     */
+    public void openStaffMenuDialog(Player moderator) {
+        if (!moderator.isOnline() || !staffManager.isInStaffMode(moderator)) {
+            return;
+        }
+
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("player", moderator.getName());
+        placeholders.put("world", moderator.getWorld().getName());
+        placeholders.put("x", String.valueOf(moderator.getLocation().getBlockX()));
+        placeholders.put("y", String.valueOf(moderator.getLocation().getBlockY()));
+        placeholders.put("z", String.valueOf(moderator.getLocation().getBlockZ()));
+        placeholders.put("online", String.valueOf(Bukkit.getOnlinePlayers().size()));
+        placeholders.put("max_online", String.valueOf(Bukkit.getMaxPlayers()));
+
+        Component title = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.title", placeholders, false));
+        Component body = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.body", placeholders, false));
+
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+
+        List<ActionButton> actions = new ArrayList<>();
+
+        // 1. Exit Staff Mode Button
+        Component exitStaffLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.btn-exit", false));
+        actions.add(ActionButton.builder(exitStaffLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        staffManager.disableStaffMode(p, true);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // 2. Close Button (exitAction)
+        Component closeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-close", false));
+        ActionButton exitAction = ActionButton.builder(closeLabel)
+                .width(buttonWidth)
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(actions, exitAction, 1)));
+
+        moderator.showDialog(dialog);
+    }
+
+    /**
      * Opens the main moderation dialog for the target player.
      */
     public void openMainDialog(Player moderator, Player target) {
@@ -96,17 +147,6 @@ public class ModerationDialogService {
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
                         openTrollingDialog(p, target);
-                    }
-                }, CALLBACK_OPTIONS))
-                .build());
-
-        // 4. Exit Staff Mode Button
-        Component exitStaffLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-exit-staff", false));
-        actions.add(ActionButton.builder(exitStaffLabel)
-                .width(buttonWidth)
-                .action(DialogAction.customClick((resp, aud) -> {
-                    if (aud instanceof Player p) {
-                        staffManager.disableStaffMode(p, true);
                     }
                 }, CALLBACK_OPTIONS))
                 .build());
@@ -290,14 +330,14 @@ public class ModerationDialogService {
                 String btnTitle = section.getString(key + ".title", key);
                 String duration = section.getString(key + ".duration", "1h");
                 String reason = section.getString(key + ".reason", "Нарушение правил чата");
-                String commandTemplate = section.getString(key + ".command", "mute {target} {duration} {reason}");
+                String customCommand = section.getString(key + ".command");
 
                 Component label = MessageUtils.parse(btnTitle + " <gray>(" + duration + ")</gray>");
                 actions.add(ActionButton.builder(label)
                         .width(buttonWidth)
                         .action(DialogAction.customClick((resp, aud) -> {
                             if (aud instanceof Player p) {
-                                executeMute(p, target, commandTemplate, duration, reason);
+                                executeMute(p, target, customCommand, duration, reason);
                             }
                         }, CALLBACK_OPTIONS))
                         .build());
@@ -346,13 +386,24 @@ public class ModerationDialogService {
         int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
         List<ActionButton> actions = new ArrayList<>();
 
-        // 1. Launch into air
-        Component launchLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll-launch", false));
-        actions.add(ActionButton.builder(launchLabel)
+        // 1. Launch with fall damage
+        Component launchDamageLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll-launch-damage", false));
+        actions.add(ActionButton.builder(launchDamageLabel)
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
-                        launchPlayer(p, target);
+                        launchPlayerWithDamage(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // 2. Launch safe (no fall damage)
+        Component launchSafeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll-launch-safe", false));
+        actions.add(ActionButton.builder(launchSafeLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        launchPlayerSafe(p, target);
                     }
                 }, CALLBACK_OPTIONS))
                 .build());
@@ -449,7 +500,14 @@ public class ModerationDialogService {
     }
 
     /**
-     * Executes mute logic for target player.
+     * Executes mute logic for target player via console command.
+     */
+    public void executeMute(Player moderator, Player target, String duration, String reason) {
+        executeMute(moderator, target, null, duration, reason);
+    }
+
+    /**
+     * Executes mute logic for target player via console command.
      */
     public void executeMute(Player moderator, Player target, String commandTemplate, String duration, String reason) {
         if (!target.isOnline()) {
@@ -457,7 +515,11 @@ public class ModerationDialogService {
             return;
         }
 
-        String cmd = commandTemplate
+        String template = (commandTemplate != null && !commandTemplate.isBlank())
+                ? commandTemplate
+                : plugin.getConfig().getString("mute-system.console-command", "mute {target} {duration} {reason}");
+
+        String cmd = template
                 .replace("{target}", target.getName())
                 .replace("{duration}", duration)
                 .replace("{reason}", reason)
@@ -477,17 +539,47 @@ public class ModerationDialogService {
     }
 
     /**
-     * Launches the target player upward.
+     * Launches the target player upward with fall damage enabled.
      */
-    public void launchPlayer(Player moderator, Player target) {
+    public void launchPlayerWithDamage(Player moderator, Player target) {
+        if (!target.isOnline()) {
+            MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (target.isOnline()) {
-                target.setVelocity(new Vector(0, 1.8, 0));
+                target.setVelocity(new Vector(0, 1.5, 0));
                 target.playSound(target.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
             }
         });
         Map<String, String> placeholders = Map.of("target", target.getName());
-        MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-launch", placeholders));
+        MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-launch-damage", placeholders));
+    }
+
+    /**
+     * Launches the target player upward safely (negating the subsequent fall damage).
+     */
+    public void launchPlayerSafe(Player moderator, Player target) {
+        if (!target.isOnline()) {
+            MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
+        staffManager.addNoFallPlayer(target.getUniqueId());
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (target.isOnline()) {
+                target.setVelocity(new Vector(0, 1.5, 0));
+                target.playSound(target.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
+            }
+        });
+        Map<String, String> placeholders = Map.of("target", target.getName());
+        MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-launch-safe", placeholders));
+    }
+
+    public void launchPlayer(Player moderator, Player target) {
+        launchPlayerWithDamage(moderator, target);
     }
 
     /**

@@ -38,6 +38,28 @@ public class ConfigManager {
         plugin.reloadConfig();
         this.config = plugin.getConfig();
 
+        // Merge missing default keys in config.yml
+        try (InputStream defConfigStream = plugin.getResource("config.yml")) {
+            if (defConfigStream != null) {
+                YamlConfiguration defConfig = YamlConfiguration.loadConfiguration(
+                        new InputStreamReader(defConfigStream, StandardCharsets.UTF_8)
+                );
+                this.config.setDefaults(defConfig);
+                boolean changed = false;
+                for (String key : defConfig.getKeys(true)) {
+                    if (!this.config.contains(key)) {
+                        this.config.set(key, defConfig.get(key));
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    plugin.saveConfig();
+                }
+            }
+        } catch (IOException e) {
+            plugin.getLogger().warning("Failed to check default config.yml keys: " + e.getMessage());
+        }
+
         // Load messages.yml
         this.messagesFile = new File(plugin.getDataFolder(), "messages.yml");
         if (!messagesFile.exists()) {
@@ -52,6 +74,16 @@ public class ConfigManager {
                         new InputStreamReader(defMessagesStream, StandardCharsets.UTF_8)
                 );
                 this.messages.setDefaults(defMessages);
+                boolean changed = false;
+                for (String key : defMessages.getKeys(true)) {
+                    if (!this.messages.contains(key)) {
+                        this.messages.set(key, defMessages.get(key));
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    this.messages.save(messagesFile);
+                }
             }
         } catch (IOException e) {
             plugin.getLogger().warning("Failed to check default messages.yml keys: " + e.getMessage());

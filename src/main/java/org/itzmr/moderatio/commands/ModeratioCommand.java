@@ -39,10 +39,19 @@ public class ModeratioCommand implements CommandExecutor, TabCompleter {
 
         // Default info output
         int activeStaffCount = plugin.getStaffManager().getActiveStaff().size();
-        String version = plugin.getPluginMeta().getVersion();
+        String version = plugin.getPluginMeta() != null ? plugin.getPluginMeta().getVersion() : plugin.getDescription().getVersion();
+        if (version == null || version.startsWith("${") || version.isEmpty()) {
+            version = plugin.getDescription().getVersion();
+        }
+        if (version == null || version.startsWith("${") || version.isEmpty()) {
+            version = "1.0.0";
+        }
+
         String author = "itzmr";
-        if (!plugin.getPluginMeta().getAuthors().isEmpty()) {
+        if (plugin.getPluginMeta() != null && !plugin.getPluginMeta().getAuthors().isEmpty()) {
             author = String.join(", ", plugin.getPluginMeta().getAuthors());
+        } else if (!plugin.getDescription().getAuthors().isEmpty()) {
+            author = String.join(", ", plugin.getDescription().getAuthors());
         }
 
         Map<String, String> placeholders = Map.of(

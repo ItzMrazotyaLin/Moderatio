@@ -13,10 +13,13 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.utils.MessageUtils;
@@ -52,7 +55,29 @@ public class StaffProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            if (staffManager.isInStaffMode(player)) {
+                event.setCancelled(true);
+                return;
+            }
+
+            if (event.getCause() == EntityDamageEvent.DamageCause.FALL && staffManager.isNoFallPlayer(player.getUniqueId())) {
+                event.setCancelled(true);
+                staffManager.removeNoFallPlayer(player.getUniqueId());
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityShootBow(EntityShootBowEvent event) {
         if (event.getEntity() instanceof Player player && staffManager.isInStaffMode(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onProjectileLaunch(ProjectileLaunchEvent event) {
+        if (event.getEntity().getShooter() instanceof Player player && staffManager.isInStaffMode(player)) {
             event.setCancelled(true);
         }
     }
@@ -105,6 +130,21 @@ public class StaffProtectionListener implements Listener {
         }
 
         Action action = event.getAction();
+
+        // Check for SHIFT + RMB (Right Click Air or Right Click Block while sneaking) to open Staff Menu
+        if (event.getHand() == EquipmentSlot.HAND && player.isSneaking()
+                && (action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK)) {
+            event.setCancelled(true);
+            plugin.getDialogService().openStaffMenuDialog(player);
+            return;
+        }
+
+        // Cancel off-hand interactions in Staff Mode to avoid duplicate processing or bypasses
+        if (event.getHand() != EquipmentSlot.HAND && action != Action.PHYSICAL) {
+            event.setCancelled(true);
+            return;
+        }
+
         if (action == Action.RIGHT_CLICK_BLOCK || action == Action.LEFT_CLICK_BLOCK || action == Action.PHYSICAL) {
             event.setCancelled(true);
             if (action != Action.PHYSICAL) {

@@ -1,11 +1,13 @@
 package org.itzmr.moderatio.listeners;
 
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -35,13 +37,15 @@ public class StaffWorldListener implements Listener {
         }
 
         // Run 1 tick later to override any world management plugin (e.g. Multiverse-Core) settings
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && staffManager.isInStaffMode(player)) {
+                player.setAllowFlight(true);
+                player.setFlying(true);
                 staffManager.applyStaffFlags(player);
                 String msg = plugin.getConfigManager().getMessage("staff-mode.world-restored");
                 MessageUtils.send(player, msg);
             }
-        });
+        }, 1L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -51,11 +55,13 @@ public class StaffWorldListener implements Listener {
             return;
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && staffManager.isInStaffMode(player)) {
+                player.setAllowFlight(true);
+                player.setFlying(true);
                 staffManager.applyStaffFlags(player);
             }
-        });
+        }, 1L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -65,11 +71,32 @@ public class StaffWorldListener implements Listener {
             return;
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && staffManager.isInStaffMode(player)) {
+                player.setAllowFlight(true);
+                player.setFlying(true);
                 staffManager.applyStaffFlags(player);
             }
-        });
+        }, 1L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onGameModeChange(PlayerGameModeChangeEvent event) {
+        Player player = event.getPlayer();
+        if (!staffManager.isInStaffMode(player)) {
+            return;
+        }
+
+        GameMode newGm = event.getNewGameMode();
+        if (newGm == GameMode.SURVIVAL || newGm == GameMode.ADVENTURE) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline() && staffManager.isInStaffMode(player)) {
+                    player.setAllowFlight(true);
+                    player.setFlying(true);
+                    staffManager.applyStaffFlags(player);
+                }
+            }, 1L);
+        }
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
@@ -80,5 +107,6 @@ public class StaffWorldListener implements Listener {
             staffManager.disableStaffMode(player, false);
         }
         staffManager.removeFrozen(player.getUniqueId());
+        staffManager.removeNoFallPlayer(player.getUniqueId());
     }
 }

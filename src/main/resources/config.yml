@@ -2,6 +2,12 @@
 #                      Moderatio Configuration File
 #                     Purpur 1.21.6 / Paper Dialog API
 # ==============================================================================
+# Доступные плейсхолдеры для консольных команд наказаний (ban-system и mute-system):
+#   {target}    — ник целевого игрока-нарушителя.
+#   {duration}  — длительность наказания (например: 7d, 30d, 1h, perm).
+#   {reason}    — причина наказания.
+#   {moderator} — ник модератора, выдавшего наказание.
+# ==============================================================================
 
 # Общие настройки Staff Mode
 settings:
@@ -23,9 +29,17 @@ trolling:
 # Режим исполнения блокировок:
 # 'NATIVE'  - исполнение через Purpur / Paper API (target.ban(reason, duration, source))
 # 'COMMAND' - исполнение через консольную команду (для сторонних плагинов банов: LiteBans, LibertyBans и др.)
+#
+# Доступные плейсхолдеры: {target}, {duration}, {reason}, {moderator}
 ban-system:
   mode: "NATIVE"
   console-command: "ban {target} {duration} {reason}"
+
+# Система мутов (исполнение через внешние плагины наказаний: LiteBans, EssentialsX, LibertyBans и др.)
+#
+# Доступные плейсхолдеры: {target}, {duration}, {reason}, {moderator}
+mute-system:
+  console-command: "mute {target} {duration} {reason}"
 
 # Готовые шаблоны блокировок (отображаются в Dialog API)
 ban-templates:
@@ -56,22 +70,18 @@ mute-templates:
     title: "<yellow>Флуд / Спам"
     duration: "1h"
     reason: "Флуд и спам в общем чате"
-    command: "mute {target} 1h Флуд и спам"
   caps:
     title: "<gold>Капс"
     duration: "30m"
     reason: "Злоупотребление верхним регистром"
-    command: "mute {target} 30m Капс"
   toxic:
     title: "<red>Оскорбления"
     duration: "2h"
     reason: "Оскорбление игроков и провокации"
-    command: "mute {target} 2h Оскорбления игроков"
   ad:
     title: "<dark_red>Реклама в чате"
     duration: "1d"
     reason: "Реклама сторонних ресурсов"
-    command: "mute {target} 1d Реклама в чате"
 
 # Настройки оформления диалогов Dialog API
 dialog:

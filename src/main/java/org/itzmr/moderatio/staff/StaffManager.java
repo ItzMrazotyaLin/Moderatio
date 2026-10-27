@@ -19,6 +19,7 @@ public class StaffManager {
     private final Moderatio plugin;
     private final Set<UUID> activeStaff = ConcurrentHashMap.newKeySet();
     private final Set<UUID> frozenPlayers = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> noFallPlayers = ConcurrentHashMap.newKeySet();
 
     public StaffManager(Moderatio plugin) {
         this.plugin = plugin;
@@ -198,5 +199,37 @@ public class StaffManager {
         }
         activeStaff.clear();
         frozenPlayers.clear();
+        noFallPlayers.clear();
+    }
+
+    /**
+     * Adds a player to the no-fall damage set.
+     *
+     * @param uuid the player UUID
+     */
+    public void addNoFallPlayer(UUID uuid) {
+        if (uuid != null) {
+            noFallPlayers.add(uuid);
+        }
+    }
+
+    /**
+     * Checks if a player should be protected from the next fall damage.
+     *
+     * @param uuid the player UUID
+     * @return true if protected
+     */
+    public boolean isNoFallPlayer(UUID uuid) {
+        return uuid != null && noFallPlayers.contains(uuid);
+    }
+
+    /**
+     * Removes a player from the no-fall damage set.
+     *
+     * @param uuid the player UUID
+     * @return true if removed
+     */
+    public boolean removeNoFallPlayer(UUID uuid) {
+        return uuid != null && noFallPlayers.remove(uuid);
     }
 }
