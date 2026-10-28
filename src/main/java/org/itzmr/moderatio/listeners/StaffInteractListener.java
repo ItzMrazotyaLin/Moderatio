@@ -4,7 +4,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.staff.StaffManager;
@@ -36,6 +38,32 @@ public class StaffInteractListener implements Listener {
         if (event.getRightClicked() instanceof Player target) {
             event.setCancelled(true);
             plugin.getDialogService().openMainDialog(moderator, target);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        if (!staffManager.isInStaffMode(player)) {
+            return;
+        }
+
+        // Only handle main hand (LEFT_CLICK_AIR has null or HAND)
+        if (event.getHand() != null && event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+
+        if (!player.isSneaking()) {
+            return;
+        }
+
+        Action action = event.getAction();
+        boolean isShiftRmbBlock = (action == Action.RIGHT_CLICK_BLOCK);
+        boolean isShiftLmb = (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK);
+
+        if (isShiftRmbBlock || isShiftLmb) {
+            event.setCancelled(true);
+            plugin.getDialogService().openStaffMenuDialog(player);
         }
     }
 }

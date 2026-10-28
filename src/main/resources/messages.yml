@@ -20,6 +20,20 @@ protection:
   cannot-pickup: "<red>Подбор предметов заблокирован в Staff Mode."
   cannot-damage: "<red>Нанесение и получение урона отключены в Staff Mode!"
 
+vanish:
+  enabled: "<green>Режим скрытия (Vanish) активирован! Вы невидимы для игроков."
+  disabled: "<red>Режим скрытия (Vanish) деактивирован! Вы снова видимы."
+  btn-toggle-on: "<green>👻 Режим скрытия: ВКЛ"
+  btn-toggle-off: "<gray>👻 Режим скрытия: ВЫКЛ"
+
+glowing:
+  enabled: "<green>Индивидуальная подсветка игрока <white>{target}</white> включена (видна только вам)!"
+  disabled: "<yellow>Индивидуальная подсветка игрока <white>{target}</white> отключена."
+
+audit:
+  title: "<gradient:#38ef7d:#11998e>Аудит состава персонала</gradient>"
+  abuse-alert: "<red><bold>[ВНИМАНИЕ]</bold> Подозрительная активность: модератор <yellow>{moderator}</yellow> выдал 4+ наказаний за минуту!"
+
 staff-menu:
   title: "<gradient:#38ef7d:#11998e>Меню модератора</gradient>"
   body: |
@@ -42,7 +56,10 @@ dialog:
 
   btn-ban: "<red>🔨 Наказать (Бан)"
   btn-mute: "<yellow>🔇 Замутить"
+  btn-glow-on: "<gold>👁 Следить за игроком (Подсветка)"
+  btn-glow-off: "<gray>👁 Следить за игроком (Выкл. подсветку)"
   btn-troll: "<light_purple>⚡ Троллинг / Действия"
+  btn-audit: "<gold>📋 Аудит состава"
   btn-exit-staff: "<dark_red>✖ Выйти из Staff"
   btn-close: "<gray>✖ Закрыть"
   btn-back: "<gray>⬅ Назад"
@@ -70,6 +87,9 @@ dialog:
 punishment:
   banned-success: "<green>Игрок <white>{target}</white> успешно заблокирован на <yellow>{duration}</yellow>! Причина: <red>{reason}</red>"
   muted-success: "<green>Наказание (мут) отправлено на выполнение для игрока <white>{target}</white>!"
+  freeze-quit-alert: "<red>Игрок <white>{player}</white> вышел с сервера во время заморозки!</red>"
+  freeze-rejoin-alert: "<red>Игрок <white>{player}</white> зашел на сервер и всё ещё находится в заморозке!</red>"
+  freeze-join-warning: "<red>Вы находитесь в режиме заморозки модерацией! Перемещение заблокировано.</red>"
   troll-launch: "<aqua>Игрок <white>{target}</white> подброшен в воздух!"
   troll-launch-damage: "<red>Игрок <white>{target}</white> подброшен в воздух (с уроном от падения)!"
   troll-launch-safe: "<green>Игрок <white>{target}</white> безопасно подброшен в воздух (без урона)!"

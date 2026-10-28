@@ -2,17 +2,23 @@ package org.itzmr.moderatio.staff;
 
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.utils.MessageUtils;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages active moderators in Staff Mode and their status.
+ * Manages active moderators in Staff Mode, persistent freeze, and protections.
  */
 public class StaffManager {
 
@@ -20,9 +26,46 @@ public class StaffManager {
     private final Set<UUID> activeStaff = ConcurrentHashMap.newKeySet();
     private final Set<UUID> frozenPlayers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> noFallPlayers = ConcurrentHashMap.newKeySet();
+    private final File frozenFile;
+    private final FileConfiguration frozenConfig;
 
     public StaffManager(Moderatio plugin) {
         this.plugin = plugin;
+        this.frozenFile = new File(plugin.getDataFolder(), "frozen_players.yml");
+        this.frozenConfig = YamlConfiguration.loadConfiguration(this.frozenFile);
+        loadFrozenPlayers();
+    }
+
+    /**
+     * Loads persistent frozen players from frozen_players.yml.
+     */
+    public void loadFrozenPlayers() {
+        frozenPlayers.clear();
+        if (frozenFile.exists()) {
+            List<String> list = frozenConfig.getStringList("frozen");
+            for (String str : list) {
+                try {
+                    frozenPlayers.add(UUID.fromString(str));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+    }
+
+    /**
+     * Saves persistent frozen players to frozen_players.yml.
+     */
+    public synchronized void saveFrozenPlayers() {
+        List<String> list = new ArrayList<>();
+        for (UUID uuid : frozenPlayers) {
+            list.add(uuid.toString());
+        }
+        frozenConfig.set("frozen", list);
+        try {
+            frozenConfig.save(frozenFile);
+        } catch (IOException e) {
+            plugin.getLogger().warning("Failed to save frozen_players.yml: " + e.getMessage());
+        }
     }
 
     /**
@@ -46,7 +89,7 @@ public class StaffManager {
     }
 
     /**
-     * Enables Staff Mode for a player.
+     * Enables Staff Mode for a player (with Vanish enabled by default).
      *
      * @param player the player
      */
@@ -55,6 +98,13 @@ public class StaffManager {
         activeStaff.add(player.getUniqueId());
 
         applyStaffFlags(player);
+
+        // 1. Automatically enable vanish by default
+        if (plugin.getVanishManager() != null && !plugin.getVanishManager().isVanished(player)) {
+            plugin.getVanishManager().enableVanish(player);
+        }
+
+        plugin.getAuditService().logAction(player, "STAFF_MODE_ENABLE", player.getName(), null);
 
         String msg = plugin.getConfigManager().getMessage("staff-mode.enabled");
         MessageUtils.send(player, msg);
@@ -71,6 +121,15 @@ public class StaffManager {
         activeStaff.remove(player.getUniqueId());
 
         removeStaffFlags(player);
+
+        if (plugin.getVanishManager() != null) {
+            plugin.getVanishManager().cleanup(player);
+        }
+        if (plugin.getGlowingManager() != null) {
+            plugin.getGlowingManager().cleanup(player);
+        }
+
+        plugin.getAuditService().logAction(player, "STAFF_MODE_DISABLE", player.getName(), null);
 
         if (sendMsg) {
             String msg = plugin.getConfigManager().getMessage("staff-mode.disabled");
@@ -132,7 +191,7 @@ public class StaffManager {
     }
 
     /**
-     * Toggles the frozen state of a player.
+     * Toggles the frozen state of a player and persists to disk.
      *
      * @param target the target player
      * @return true if player is now frozen, false if thawed
@@ -142,53 +201,38 @@ public class StaffManager {
         UUID uuid = target.getUniqueId();
         if (frozenPlayers.contains(uuid)) {
             frozenPlayers.remove(uuid);
+            saveFrozenPlayers();
             return false;
         } else {
             frozenPlayers.add(uuid);
+            saveFrozenPlayers();
             return true;
         }
     }
 
     /**
-     * Unfreezes a player (e.g. on disconnect).
+     * Unfreezes a player and saves changes.
      */
     public void removeFrozen(UUID uuid) {
-        if (uuid != null) {
-            frozenPlayers.remove(uuid);
+        if (uuid != null && frozenPlayers.remove(uuid)) {
+            saveFrozenPlayers();
         }
     }
 
     /**
-     * Checks if a moderator is allowed to perform trolling actions.
+     * Checks if a moderator is allowed to perform trolling actions (exclusive to developers).
      *
      * @param moderator the moderator
      * @return true if allowed
      */
     public boolean canTroll(Player moderator) {
         if (moderator == null) return false;
-        if (!moderator.hasPermission("moderatio.staff")) return false;
-
-        if (!plugin.getConfigManager().isTrollingWhitelistEnabled()) {
-            return true;
-        }
-
-        var whitelist = plugin.getConfigManager().getTrollingWhitelist();
-        String uuidStr = moderator.getUniqueId().toString().toLowerCase();
-        String name = moderator.getName().toLowerCase();
-
-        for (String entry : whitelist) {
-            if (entry != null) {
-                String normalized = entry.trim().toLowerCase();
-                if (normalized.equals(name) || normalized.equals(uuidStr)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return plugin.getAuditService().isDeveloper(moderator);
     }
 
     /**
      * Cleans up all staff modes on server shutdown or plugin disable.
+     * Note: Persistent frozen players are preserved and saved!
      */
     public void cleanup() {
         for (UUID uuid : activeStaff) {
@@ -198,7 +242,7 @@ public class StaffManager {
             }
         }
         activeStaff.clear();
-        frozenPlayers.clear();
+        saveFrozenPlayers();
         noFallPlayers.clear();
     }
 

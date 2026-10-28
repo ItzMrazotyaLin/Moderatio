@@ -17,6 +17,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 import org.itzmr.moderatio.Moderatio;
+import org.itzmr.moderatio.audit.StaffActionEntry;
 import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.utils.MessageUtils;
 
@@ -26,6 +27,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,7 +75,43 @@ public class ModerationDialogService {
 
         List<ActionButton> actions = new ArrayList<>();
 
-        // 1. Exit Staff Mode Button
+        // 1. Vanish Toggle Button
+        boolean isVanished = plugin.getVanishManager().isVanished(moderator);
+        String vanishLabelKey = isVanished ? "vanish.btn-toggle-on" : "vanish.btn-toggle-off";
+        String defaultVanishText = isVanished ? "<green>👻 Режим скрытия: ВКЛ" : "<gray>👻 Режим скрытия: ВЫКЛ";
+        String vanishRaw = plugin.getConfigManager().getMessage(vanishLabelKey, false);
+        if (vanishRaw.contains("Missing message")) {
+            vanishRaw = defaultVanishText;
+        }
+        Component vanishLabel = MessageUtils.parse(vanishRaw);
+        actions.add(ActionButton.builder(vanishLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        plugin.getVanishManager().toggleVanish(p);
+                        openStaffMenuDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // 2. Staff Audit (Developers Only)
+        if (plugin.getAuditService().isDeveloper(moderator)) {
+            String auditRaw = plugin.getConfigManager().getMessage("dialog.btn-audit", false);
+            if (auditRaw.contains("Missing message")) {
+                auditRaw = "<gold>📋 Аудит состава";
+            }
+            Component auditLabel = MessageUtils.parse(auditRaw);
+            actions.add(ActionButton.builder(auditLabel)
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openStaffAuditDialog(p);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+        }
+
+        // 3. Exit Staff Mode Button
         Component exitStaffLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.btn-exit", false));
         actions.add(ActionButton.builder(exitStaffLabel)
                 .width(buttonWidth)
@@ -84,7 +122,7 @@ public class ModerationDialogService {
                 }, CALLBACK_OPTIONS))
                 .build());
 
-        // 2. Close Button (exitAction)
+        // Close Button (exitAction)
         Component closeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-close", false));
         ActionButton exitAction = ActionButton.builder(closeLabel)
                 .width(buttonWidth)
@@ -98,6 +136,119 @@ public class ModerationDialogService {
                 .type(DialogType.multiAction(actions, exitAction, 1)));
 
         moderator.showDialog(dialog);
+    }
+
+    /**
+     * Opens the staff members audit dialog (developers only).
+     */
+    public void openStaffAuditDialog(Player developer) {
+        if (!developer.isOnline() || !plugin.getAuditService().isDeveloper(developer)) {
+            return;
+        }
+
+        String rawTitle = plugin.getConfigManager().getMessage("audit.title", false);
+        if (rawTitle.contains("Missing message")) {
+            rawTitle = "<gradient:#38ef7d:#11998e>Аудит состава персонала</gradient>";
+        }
+        Component title = MessageUtils.parse(rawTitle);
+
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+        List<ActionButton> actions = new ArrayList<>();
+
+        Set<String> staffNames = plugin.getAuditService().getAllKnownStaff();
+        StringBuilder bodyBuilder = new StringBuilder("<gray>Выберите модератора для просмотра последних 10 действий:</gray>\n");
+
+        for (String staffName : staffNames) {
+            Player staffPlayer = Bukkit.getPlayerExact(staffName);
+            boolean isOnline = staffPlayer != null && staffPlayer.isOnline();
+            boolean inStaffMode = staffPlayer != null && staffManager.isInStaffMode(staffPlayer);
+
+            String statusTag = isOnline
+                    ? (inStaffMode ? "<green>[ONLINE | STAFF MODE]</green>" : "<yellow>[ONLINE]</yellow>")
+                    : "<dark_gray>[OFFLINE]</dark_gray>";
+
+            bodyBuilder.append("\n<white>• ").append(staffName).append("</white> ").append(statusTag);
+
+            String btnText = (isOnline ? "<green>👤 " : "<gray>👤 ") + staffName;
+            actions.add(ActionButton.builder(MessageUtils.parse(btnText))
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openModeratorHistoryDialog(p, staffName);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+        }
+
+        if (staffNames.isEmpty()) {
+            bodyBuilder.append("\n<dark_gray>Список персонала пуст.</dark_gray>");
+        }
+
+        Component body = MessageUtils.parse(bodyBuilder.toString());
+
+        // Back button
+        Component backLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-back", false));
+        ActionButton exitAction = ActionButton.builder(backLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openStaffMenuDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(actions, exitAction, 1)));
+
+        developer.showDialog(dialog);
+    }
+
+    /**
+     * Opens the recent actions history dialog for a specific staff member.
+     */
+    public void openModeratorHistoryDialog(Player developer, String staffName) {
+        if (!developer.isOnline() || !plugin.getAuditService().isDeveloper(developer)) {
+            return;
+        }
+
+        Component title = MessageUtils.parse("<gold>История действий: <yellow>" + staffName + "</yellow></gold>");
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+
+        List<StaffActionEntry> entries = plugin.getAuditService().getRecentActions(staffName);
+        StringBuilder sb = new StringBuilder();
+        if (entries.isEmpty()) {
+            sb.append("<gray>У модератора <white>").append(staffName).append("</white> нет недавних зафиксированных действий.</gray>");
+        } else {
+            sb.append("<gray>Последние ").append(entries.size()).append(" действий модератора:</gray>\n\n");
+            for (StaffActionEntry entry : entries) {
+                sb.append(entry.toDisplayFormat()).append("\n");
+            }
+        }
+
+        Component body = MessageUtils.parse(sb.toString());
+
+        Component backLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-back", false));
+        ActionButton exitAction = ActionButton.builder(backLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openStaffAuditDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(Collections.emptyList(), exitAction, 1)));
+
+        developer.showDialog(dialog);
     }
 
     /**
@@ -140,16 +291,37 @@ public class ModerationDialogService {
                 }, CALLBACK_OPTIONS))
                 .build());
 
-        // 3. Trolling Button
-        Component trollLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll", false));
-        actions.add(ActionButton.builder(trollLabel)
+        // 3. Target Glowing Toggle Button
+        boolean glowing = plugin.getGlowingManager().isGlowing(moderator.getUniqueId(), target.getUniqueId());
+        String glowKey = glowing ? "dialog.btn-glow-off" : "dialog.btn-glow-on";
+        String glowDefault = glowing ? "<gray>👁 Следить за игроком (Выкл. подсветку)" : "<gold>👁 Следить за игроком (Подсветка)";
+        String glowRaw = plugin.getConfigManager().getMessage(glowKey, false);
+        if (glowRaw.contains("Missing message")) {
+            glowRaw = glowDefault;
+        }
+        Component glowLabel = MessageUtils.parse(glowRaw);
+        actions.add(ActionButton.builder(glowLabel)
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
-                        openTrollingDialog(p, target);
+                        plugin.getGlowingManager().toggleGlowing(p, target);
+                        openMainDialog(p, target);
                     }
                 }, CALLBACK_OPTIONS))
                 .build());
+
+        // 4. Trolling Button (Exclusive to Developers)
+        if (staffManager.canTroll(moderator)) {
+            Component trollLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll", false));
+            actions.add(ActionButton.builder(trollLabel)
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openTrollingDialog(p, target);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+        }
 
         // Exit / Close button
         Component closeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-close", false));
@@ -462,6 +634,17 @@ public class ModerationDialogService {
     }
 
     /**
+     * Checks if a duration string indicates a permanent punishment.
+     */
+    public boolean isPermanentDuration(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return true;
+        }
+        String clean = input.trim().toLowerCase();
+        return clean.equals("perm") || clean.equals("permanent") || clean.equals("forever") || clean.equals("0") || clean.equals("навсегда");
+    }
+
+    /**
      * Executes ban logic for target player.
      */
     public void executeBan(Player moderator, Player target, String durationStr, String reason) {
@@ -470,29 +653,54 @@ public class ModerationDialogService {
             return;
         }
 
-        String mode = plugin.getConfig().getString("ban-system.mode", "NATIVE").toUpperCase();
+        String mode = plugin.getConfig().getString("punishments.mode",
+                plugin.getConfig().getString("ban-system.mode", "CONSOLE_COMMAND")).toUpperCase();
+        boolean isPerm = isPermanentDuration(durationStr);
 
-        if ("COMMAND".equals(mode)) {
-            String cmdTemplate = plugin.getConfig().getString("ban-system.console-command", "ban {target} {duration} {reason}");
-            String cmd = cmdTemplate
-                    .replace("{target}", target.getName())
-                    .replace("{duration}", durationStr)
-                    .replace("{reason}", reason)
-                    .replace("{moderator}", moderator.getName());
-
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
-            });
-        } else {
-            Duration duration = parseDuration(durationStr);
+        if ("NATIVE".equals(mode)) {
+            Duration duration = isPerm ? null : parseDuration(durationStr);
             Bukkit.getScheduler().runTask(plugin, () -> {
                 target.ban(reason, duration, moderator.getName(), true);
             });
+        } else {
+            boolean useSeparate = plugin.getConfig().getBoolean("punishments.use-separate-temp-commands", true);
+            String cmdTemplate;
+            if (isPerm) {
+                cmdTemplate = plugin.getConfig().getString("punishments.bans.perm-command", "ban {target} {reason}");
+            } else if (useSeparate) {
+                cmdTemplate = plugin.getConfig().getString("punishments.bans.temp-command", "tempban {target} {duration} {reason}");
+            } else {
+                cmdTemplate = plugin.getConfig().getString("punishments.bans.single-command",
+                        plugin.getConfig().getString("ban-system.console-command", "ban {target} {duration} {reason}"));
+            }
+
+            String rawCmd = cmdTemplate
+                    .replace("{target}", target.getName())
+                    .replace("{duration}", durationStr != null ? durationStr : "")
+                    .replace("{reason}", reason)
+                    .replace("{moderator}", moderator.getName());
+
+            final String finalCmd = rawCmd.startsWith("/") ? rawCmd.substring(1).trim() : rawCmd.trim();
+
+            Runnable task = () -> {
+                plugin.getLogger().info("[Moderatio] Executing ban command: " + finalCmd);
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
+            };
+
+            if (Bukkit.isPrimaryThread()) {
+                task.run();
+            } else {
+                Bukkit.getScheduler().runTask(plugin, task);
+            }
         }
+
+        // Action audit and anti-abuse detection
+        plugin.getAuditService().logAction(moderator, "BAN", target.getName(), "Duration: " + durationStr + ", Reason: " + reason);
+        plugin.getAuditService().checkPunishmentAbuse(moderator);
 
         Map<String, String> placeholders = Map.of(
                 "target", target.getName(),
-                "duration", durationStr,
+                "duration", durationStr != null ? durationStr : "perm",
                 "reason", reason,
                 "moderator", moderator.getName()
         );
@@ -515,23 +723,51 @@ public class ModerationDialogService {
             return;
         }
 
-        String template = (commandTemplate != null && !commandTemplate.isBlank())
-                ? commandTemplate
-                : plugin.getConfig().getString("mute-system.console-command", "mute {target} {duration} {reason}");
+        String template = commandTemplate;
+        if (template == null || template.isBlank()) {
+            boolean useSeparate = plugin.getConfig().getBoolean("punishments.use-separate-temp-commands", true);
+            boolean isPerm = isPermanentDuration(duration);
+            if (isPerm) {
+                template = plugin.getConfig().getString("punishments.mutes.perm-command", "mute {target} {reason}");
+            } else if (useSeparate) {
+                template = plugin.getConfig().getString("punishments.mutes.temp-command", "tempmute {target} {duration} {reason}");
+            } else {
+                template = plugin.getConfig().getString("punishments.mutes.single-command",
+                        plugin.getConfig().getString("mute-system.console-command", "mute {target} {duration} {reason}"));
+            }
+        }
 
-        String cmd = template
+        if (template == null || template.isBlank()) {
+            template = "tempmute {target} {duration} {reason}";
+        }
+
+        String rawCmd = template
                 .replace("{target}", target.getName())
-                .replace("{duration}", duration)
+                .replace("{duration}", duration != null ? duration : "")
                 .replace("{reason}", reason)
                 .replace("{moderator}", moderator.getName());
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
-        });
+        final String finalCmd = rawCmd.startsWith("/") ? rawCmd.substring(1).trim() : rawCmd.trim();
+
+        // Must strictly run in the main synchronous thread
+        Runnable task = () -> {
+            plugin.getLogger().info("[Moderatio] Executing mute command: " + finalCmd);
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
+        };
+
+        if (Bukkit.isPrimaryThread()) {
+            task.run();
+        } else {
+            Bukkit.getScheduler().runTask(plugin, task);
+        }
+
+        // Action audit and anti-abuse detection
+        plugin.getAuditService().logAction(moderator, "MUTE", target.getName(), "Duration: " + duration + ", Reason: " + reason);
+        plugin.getAuditService().checkPunishmentAbuse(moderator);
 
         Map<String, String> placeholders = Map.of(
                 "target", target.getName(),
-                "duration", duration,
+                "duration", duration != null ? duration : "perm",
                 "reason", reason,
                 "moderator", moderator.getName()
         );
@@ -553,6 +789,7 @@ public class ModerationDialogService {
                 target.playSound(target.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
             }
         });
+        plugin.getAuditService().logAction(moderator, "TROLL_LAUNCH", target.getName(), "With Fall Damage");
         Map<String, String> placeholders = Map.of("target", target.getName());
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-launch-damage", placeholders));
     }
@@ -574,6 +811,7 @@ public class ModerationDialogService {
                 target.playSound(target.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
             }
         });
+        plugin.getAuditService().logAction(moderator, "TROLL_LAUNCH", target.getName(), "Safe / No Damage");
         Map<String, String> placeholders = Map.of("target", target.getName());
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-launch-safe", placeholders));
     }
@@ -587,6 +825,7 @@ public class ModerationDialogService {
      */
     public void toggleFreezePlayer(Player moderator, Player target) {
         boolean frozen = staffManager.toggleFreeze(target);
+        plugin.getAuditService().logAction(moderator, "TROLL_FREEZE", target.getName(), frozen ? "Freeze ON" : "Freeze OFF");
         Map<String, String> placeholders = Map.of("target", target.getName());
         if (frozen) {
             MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-freeze-on", placeholders));
@@ -606,6 +845,7 @@ public class ModerationDialogService {
                 target.getWorld().playSound(loc, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 1.0f);
             }
         });
+        plugin.getAuditService().logAction(moderator, "TROLL_EXPLOSION", target.getName(), null);
         Map<String, String> placeholders = Map.of("target", target.getName());
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-explosion", placeholders));
     }
@@ -619,6 +859,7 @@ public class ModerationDialogService {
                 target.getWorld().strikeLightningEffect(target.getLocation());
             }
         });
+        plugin.getAuditService().logAction(moderator, "TROLL_LIGHTNING", target.getName(), null);
         Map<String, String> placeholders = Map.of("target", target.getName());
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-lightning", placeholders));
     }

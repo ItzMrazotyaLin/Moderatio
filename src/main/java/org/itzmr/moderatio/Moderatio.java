@@ -8,6 +8,7 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
+import org.itzmr.moderatio.audit.StaffAuditService;
 import org.itzmr.moderatio.commands.ModeratioCommand;
 import org.itzmr.moderatio.commands.StaffCommand;
 import org.itzmr.moderatio.config.ConfigManager;
@@ -15,7 +16,9 @@ import org.itzmr.moderatio.dialogs.ModerationDialogService;
 import org.itzmr.moderatio.listeners.StaffInteractListener;
 import org.itzmr.moderatio.listeners.StaffProtectionListener;
 import org.itzmr.moderatio.listeners.StaffWorldListener;
+import org.itzmr.moderatio.staff.GlowingManager;
 import org.itzmr.moderatio.staff.StaffManager;
+import org.itzmr.moderatio.staff.VanishManager;
 
 import java.util.List;
 
@@ -29,6 +32,9 @@ public final class Moderatio extends JavaPlugin {
     private ConfigManager configManager;
     private StaffManager staffManager;
     private ModerationDialogService dialogService;
+    private StaffAuditService auditService;
+    private VanishManager vanishManager;
+    private GlowingManager glowingManager;
 
     public static Moderatio getInstance() {
         return instance;
@@ -42,7 +48,10 @@ public final class Moderatio extends JavaPlugin {
         this.configManager = new ConfigManager(this);
 
         // 2. Initialize Managers & Services
+        this.auditService = new StaffAuditService(this);
         this.staffManager = new StaffManager(this);
+        this.vanishManager = new VanishManager(this);
+        this.glowingManager = new GlowingManager(this);
         this.dialogService = new ModerationDialogService(this);
 
         // 3. Register Event Listeners
@@ -50,6 +59,7 @@ public final class Moderatio extends JavaPlugin {
         pm.registerEvents(new StaffProtectionListener(this), this);
         pm.registerEvents(new StaffWorldListener(this), this);
         pm.registerEvents(new StaffInteractListener(this), this);
+        pm.registerEvents(this.vanishManager, this);
 
         // 4. Register Commands
         registerCommands();
@@ -73,6 +83,7 @@ public final class Moderatio extends JavaPlugin {
         PluginCommand staffPluginCmd = getCommand("staff");
         if (staffPluginCmd != null) {
             staffPluginCmd.setExecutor(staffCmd);
+            staffPluginCmd.setTabCompleter(staffCmd);
         } else {
             registerCommandViaMap("staff", "Toggles staff mode", "/staff", List.of("sm", "staffmode"), staffCmd);
         }
@@ -101,7 +112,10 @@ public final class Moderatio extends JavaPlugin {
 
             @Override
             public @NotNull List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, @NotNull String[] args) {
-                if (handler instanceof ModeratioCommand mc) {
+                if (handler instanceof StaffCommand sc) {
+                    List<String> list = sc.onTabComplete(sender, this, alias, args);
+                    return list != null ? list : super.tabComplete(sender, alias, args);
+                } else if (handler instanceof ModeratioCommand mc) {
                     List<String> list = mc.onTabComplete(sender, this, alias, args);
                     return list != null ? list : super.tabComplete(sender, alias, args);
                 }
@@ -121,5 +135,17 @@ public final class Moderatio extends JavaPlugin {
 
     public ModerationDialogService getDialogService() {
         return dialogService;
+    }
+
+    public StaffAuditService getAuditService() {
+        return auditService;
+    }
+
+    public VanishManager getVanishManager() {
+        return vanishManager;
+    }
+
+    public GlowingManager getGlowingManager() {
+        return glowingManager;
     }
 }

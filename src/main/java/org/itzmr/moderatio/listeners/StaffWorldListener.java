@@ -8,12 +8,17 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.utils.MessageUtils;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 /**
  * Handles cross-world persistence (Multiverse-Core compatibility), teleports,
@@ -106,7 +111,63 @@ public class StaffWorldListener implements Listener {
             // Revert flags before leaving so state is completely clean
             staffManager.disableStaffMode(player, false);
         }
-        staffManager.removeFrozen(player.getUniqueId());
         staffManager.removeNoFallPlayer(player.getUniqueId());
+
+        // Check if player left while frozen (Persistence of freeze)
+        if (staffManager.isFrozen(player.getUniqueId())) {
+            // DO NOT unfreeze! Keep frozen state persisted.
+            String quitMsg = plugin.getConfigManager().getMessage("punishment.freeze-quit-alert",
+                    Map.of("player", player.getName()), false);
+            if (quitMsg.contains("Missing message")) {
+                quitMsg = "<red>Игрок <white>" + player.getName() + "</white> вышел с сервера во время заморозки!</red>";
+            }
+            for (Player staff : Bukkit.getOnlinePlayers()) {
+                if (staff.hasPermission("moderatio.staff")) {
+                    MessageUtils.send(staff, quitMsg);
+                }
+            }
+
+            DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String timeStr = LocalDateTime.now().format(dtf);
+            String logLine = String.format("[%s] [FREEZE_QUIT] Игрок: %s (UUID: %s) покинул сервер во время заморозки! | Мир: %s (%d, %d, %d)",
+                    timeStr, player.getName(), player.getUniqueId(),
+                    player.getWorld().getName(),
+                    player.getLocation().getBlockX(),
+                    player.getLocation().getBlockY(),
+                    player.getLocation().getBlockZ());
+            plugin.getAuditService().writeRawLog(logLine);
+            plugin.getLogger().warning(logLine);
+        }
+
+        if (plugin.getVanishManager() != null) {
+            plugin.getVanishManager().cleanup(player);
+        }
+        if (plugin.getGlowingManager() != null) {
+            plugin.getGlowingManager().cleanup(player);
+            plugin.getGlowingManager().onTargetQuit(player);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (staffManager.isFrozen(player.getUniqueId())) {
+            String alertStaff = plugin.getConfigManager().getMessage("punishment.freeze-rejoin-alert",
+                    Map.of("player", player.getName()), false);
+            if (alertStaff.contains("Missing message")) {
+                alertStaff = "<red>Игрок <white>" + player.getName() + "</white> зашел на сервер и всё ещё находится в заморозке!</red>";
+            }
+            for (Player staff : Bukkit.getOnlinePlayers()) {
+                if (staff.hasPermission("moderatio.staff")) {
+                    MessageUtils.send(staff, alertStaff);
+                }
+            }
+
+            String freezeWarn = plugin.getConfigManager().getMessage("punishment.freeze-join-warning", false);
+            if (freezeWarn.contains("Missing message")) {
+                freezeWarn = "<red>Вы находитесь в режиме заморозки модерацией! Перемещение заблокировано.</red>";
+            }
+            MessageUtils.send(player, freezeWarn);
+        }
     }
 }

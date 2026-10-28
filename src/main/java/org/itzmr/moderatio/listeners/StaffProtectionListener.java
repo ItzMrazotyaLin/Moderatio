@@ -16,6 +16,7 @@ import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -129,18 +130,20 @@ public class StaffProtectionListener implements Listener {
             return;
         }
 
+        if (event.isCancelled()) {
+            return;
+        }
+
         Action action = event.getAction();
 
-        // Check for SHIFT + RMB (Right Click Air or Right Click Block while sneaking) to open Staff Menu
-        if (event.getHand() == EquipmentSlot.HAND && player.isSneaking()
-                && (action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK)) {
+        // Check for SHIFT + RMB on block or SHIFT + LMB on air/block (opens staff menu in StaffInteractListener)
+        if (player.isSneaking() && (action == Action.RIGHT_CLICK_BLOCK || action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK)) {
             event.setCancelled(true);
-            plugin.getDialogService().openStaffMenuDialog(player);
             return;
         }
 
         // Cancel off-hand interactions in Staff Mode to avoid duplicate processing or bypasses
-        if (event.getHand() != EquipmentSlot.HAND && action != Action.PHYSICAL) {
+        if (event.getHand() != null && event.getHand() != EquipmentSlot.HAND && action != Action.PHYSICAL) {
             event.setCancelled(true);
             return;
         }
@@ -193,6 +196,23 @@ public class StaffProtectionListener implements Listener {
             back.setYaw(to.getYaw());
             back.setPitch(to.getPitch());
             event.setTo(back);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onCommandSend(PlayerCommandSendEvent event) {
+        if (!event.getPlayer().hasPermission("moderatio.staff")) {
+            var commands = event.getCommands();
+            commands.remove("staff");
+            commands.remove("moderatio");
+            commands.remove("sm");
+            commands.remove("staffmode");
+            commands.remove("mod");
+            commands.remove("moderatio:staff");
+            commands.remove("moderatio:moderatio");
+            commands.remove("moderatio:sm");
+            commands.remove("moderatio:staffmode");
+            commands.remove("moderatio:mod");
         }
     }
 }

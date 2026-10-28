@@ -2,12 +2,20 @@
 #                      Moderatio Configuration File
 #                     Purpur 1.21.6 / Paper Dialog API
 # ==============================================================================
-# Доступные плейсхолдеры для консольных команд наказаний (ban-system и mute-system):
+# Доступные плейсхолдеры для консольных команд наказаний:
 #   {target}    — ник целевого игрока-нарушителя.
 #   {duration}  — длительность наказания (например: 7d, 30d, 1h, perm).
 #   {reason}    — причина наказания.
 #   {moderator} — ник модератора, выдавшего наказание.
 # ==============================================================================
+
+# Список разработчиков проекта.
+# Никам из этого списка эксклюзивно доступны:
+# - Меню троллинга над нарушителями
+# - Подменю "Аудит состава" и история действий модераторов
+# - Получение алертов Anti-Abuse (слив наказаний модераторами)
+developers:
+  - "ItzMrazotyaLin"
 
 # Общие настройки Staff Mode
 settings:
@@ -16,30 +24,26 @@ settings:
   # Сохранять ли режим Staff при смене миров (Multiverse persistence)
   persist-across-worlds: true
 
-# Настройки системы троллинга и быстрых действий над нарушителями
-trolling:
-  # Включен ли белый список?
-  # Если false — троллинг доступен всем модераторам с правом moderatio.staff.
-  # Если true — только игрокам/UUID из списка ниже.
-  whitelist-enabled: false
-  whitelist:
-    - "itzmr"
-    - "00000000-0000-0000-0000-000000000000"
+# Модуль Vanish (Скрытие модератора)
+vanish:
+  # Режимы скрытия:
+  # 'INTERNAL' - встроенное скрытие через Bukkit API (hidePlayer, тишина звуков, скрытие из таба)
+  # 'EXTERNAL' - вызов внешней команды стороннего плагина (например PremiumVanish, SuperVanish)
+  mode: "INTERNAL"
+  external-command: "vanish {moderator}"
 
-# Режим исполнения блокировок:
-# 'NATIVE'  - исполнение через Purpur / Paper API (target.ban(reason, duration, source))
-# 'COMMAND' - исполнение через консольную команду (для сторонних плагинов банов: LiteBans, LibertyBans и др.)
-#
-# Доступные плейсхолдеры: {target}, {duration}, {reason}, {moderator}
-ban-system:
-  mode: "NATIVE"
-  console-command: "ban {target} {duration} {reason}"
-
-# Система мутов (исполнение через внешние плагины наказаний: LiteBans, EssentialsX, LibertyBans и др.)
-#
-# Доступные плейсхолдеры: {target}, {duration}, {reason}, {moderator}
-mute-system:
-  console-command: "mute {target} {duration} {reason}"
+# Маршрутизация исполнения наказаний (/ban vs /tempban, /mute vs /tempmute)
+punishments:
+  mode: "CONSOLE_COMMAND" # 'CONSOLE_COMMAND' или 'NATIVE' (для банов через Paper/Purpur API)
+  use-separate-temp-commands: true # true: использовать temp-команды для временных сроков
+  bans:
+    perm-command: "ban {target} {reason}"
+    temp-command: "tempban {target} {duration} {reason}"
+    single-command: "ban {target} {duration} {reason}"
+  mutes:
+    perm-command: "mute {target} {reason}"
+    temp-command: "tempmute {target} {duration} {reason}"
+    single-command: "mute {target} {duration} {reason}"
 
 # Готовые шаблоны блокировок (отображаются в Dialog API)
 ban-templates:
