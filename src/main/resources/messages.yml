@@ -58,6 +58,8 @@ dialog:
   btn-mute: "<yellow>🔇 Замутить"
   btn-glow-on: "<gold>👁 Следить за игроком (Подсветка)"
   btn-glow-off: "<gray>👁 Следить за игроком (Выкл. подсветку)"
+  btn-cheat-check: "<yellow>Проверка на читы</yellow>"
+  btn-cheat-uncheck: "<green><bold>Снять с проверки</bold></green>"
   btn-troll: "<light_purple>⚡ Троллинг / Действия"
   btn-audit: "<gold>📋 Аудит состава"
   btn-exit-staff: "<dark_red>✖ Выйти из Staff"

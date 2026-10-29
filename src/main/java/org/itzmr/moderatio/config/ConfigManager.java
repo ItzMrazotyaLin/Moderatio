@@ -214,4 +214,61 @@ public class ConfigManager {
     public boolean isAntiAbuseBlockPunishmentsOnLimit() {
         return config.getBoolean("anti-abuse.block-punishments-on-limit", true);
     }
+
+    /**
+     * Checks if cheat check integration is enabled.
+     */
+    public boolean isCheatCheckEnabled() {
+        return config.getBoolean("cheat-check.enabled", true);
+    }
+
+    /**
+     * Gets executor mode for cheat check command ('MODERATOR' or 'CONSOLE').
+     */
+    public String getCheatCheckExecutor() {
+        return config.getString("cheat-check.executor", "MODERATOR");
+    }
+
+    /**
+     * Gets cheat check command template (fallback).
+     */
+    public String getCheatCheckCommand() {
+        return getCheatCheckStartCommand();
+    }
+
+    /**
+     * Gets start command template for cheat check.
+     */
+    public String getCheatCheckStartCommand() {
+        return config.getString("cheat-check.start-command",
+                config.getString("cheat-check.command", "check {target}"));
+    }
+
+    /**
+     * Gets finish command template for cheat check.
+     */
+    public String getCheatCheckFinishCommand() {
+        return config.getString("cheat-check.finish-command", "uncheck {target}");
+    }
+
+    /**
+     * Checks if auto detection of chat check commands is enabled.
+     */
+    public boolean isCheatCheckAutoDetectChatCommand() {
+        return config.getBoolean("cheat-check.auto-detect-chat-command", true);
+    }
+
+    /**
+     * Gets the trigger command for starting a check from chat (without leading slash).
+     */
+    public String getCheatCheckTriggerCommand() {
+        return config.getString("cheat-check.trigger-command", "check");
+    }
+
+    /**
+     * Gets the trigger command for finishing a check from chat (without leading slash).
+     */
+    public String getCheatCheckFinishTriggerCommand() {
+        return config.getString("cheat-check.finish-trigger-command", "uncheck");
+    }
 }

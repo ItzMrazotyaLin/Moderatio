@@ -16,6 +16,7 @@ import org.itzmr.moderatio.dialogs.ModerationDialogService;
 import org.itzmr.moderatio.listeners.StaffInteractListener;
 import org.itzmr.moderatio.listeners.StaffProtectionListener;
 import org.itzmr.moderatio.listeners.StaffWorldListener;
+import org.itzmr.moderatio.staff.CheckManager;
 import org.itzmr.moderatio.staff.GlowingManager;
 import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.staff.VanishManager;
@@ -35,6 +36,7 @@ public final class Moderatio extends JavaPlugin {
     private StaffAuditService auditService;
     private VanishManager vanishManager;
     private GlowingManager glowingManager;
+    private CheckManager checkManager;
 
     public static Moderatio getInstance() {
         return instance;
@@ -52,6 +54,7 @@ public final class Moderatio extends JavaPlugin {
         this.staffManager = new StaffManager(this);
         this.vanishManager = new VanishManager(this);
         this.glowingManager = new GlowingManager(this);
+        this.checkManager = new CheckManager(this);
         this.dialogService = new ModerationDialogService(this);
 
         // 3. Register Event Listeners
@@ -60,6 +63,7 @@ public final class Moderatio extends JavaPlugin {
         pm.registerEvents(new StaffWorldListener(this), this);
         pm.registerEvents(new StaffInteractListener(this), this);
         pm.registerEvents(this.vanishManager, this);
+        pm.registerEvents(this.checkManager, this);
 
         // 4. Register Commands
         registerCommands();
@@ -69,11 +73,14 @@ public final class Moderatio extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (this.glowingManager != null) {
-            this.glowingManager.cleanupAll();
-        }
         if (this.staffManager != null) {
             this.staffManager.cleanup();
+        }
+        if (this.checkManager != null) {
+            this.checkManager.cleanupAll();
+        }
+        if (this.glowingManager != null) {
+            this.glowingManager.cleanupAll();
         }
         getLogger().info("Moderatio plugin disabled. All staff modes have been safely restored.");
     }
@@ -150,5 +157,9 @@ public final class Moderatio extends JavaPlugin {
 
     public GlowingManager getGlowingManager() {
         return glowingManager;
+    }
+
+    public CheckManager getCheckManager() {
+        return checkManager;
     }
 }

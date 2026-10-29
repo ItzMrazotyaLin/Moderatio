@@ -22,6 +22,8 @@ import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.utils.MessageUtils;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -299,27 +301,68 @@ public class ModerationDialogService {
                 }, CALLBACK_OPTIONS))
                 .build());
 
-        // 3. Target Glowing Toggle Button
-        boolean glowing = plugin.getGlowingManager().isGlowing(moderator.getUniqueId(), target.getUniqueId());
-        String glowKey = glowing ? "dialog.btn-glow-off" : "dialog.btn-glow-on";
-        String glowDefault = glowing ? "<gray>👁 Следить за игроком (Выкл. подсветку)" : "<gold>👁 Следить за игроком (Подсветка)";
-        String glowRaw = plugin.getConfigManager().getMessage(glowKey, false);
-        if (glowRaw.contains("Missing message")) {
-            glowRaw = glowDefault;
-        }
-        Component glowLabel = MessageUtils.parse(glowRaw);
-        actions.add(ActionButton.builder(glowLabel)
-                .width(buttonWidth)
-                .action(DialogAction.customClick((resp, aud) -> {
-                    if (aud instanceof Player p) {
-                        plugin.getGlowingManager().toggleGlowing(p, target);
-                        openMainDialog(p, target);
-                    }
-                }, CALLBACK_OPTIONS))
-                .build());
+        boolean isCheckingThisTarget = plugin.getCheckManager().isCheckingTarget(moderator, target);
 
-        // 4. Trolling Button (Exclusive to Developers)
-        if (staffManager.canTroll(moderator)) {
+        // 3. Target Glowing Toggle Button (hidden if moderator is actively checking this target)
+        if (!isCheckingThisTarget) {
+            boolean glowing = plugin.getGlowingManager().isGlowing(moderator.getUniqueId(), target.getUniqueId());
+            String glowKey = glowing ? "dialog.btn-glow-off" : "dialog.btn-glow-on";
+            String glowDefault = glowing ? "<gray>👁 Следить за игроком (Выкл. подсветку)" : "<gold>👁 Следить за игроком (Подсветка)";
+            String glowRaw = plugin.getConfigManager().getMessage(glowKey, false);
+            if (glowRaw.contains("Missing message")) {
+                glowRaw = glowDefault;
+            }
+            Component glowLabel = MessageUtils.parse(glowRaw);
+            actions.add(ActionButton.builder(glowLabel)
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            plugin.getGlowingManager().toggleGlowing(p, target);
+                            openMainDialog(p, target);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+        }
+
+        // 4. Cheat Check / Finish Check Button
+        if (plugin.getConfigManager().isCheatCheckEnabled()) {
+            if (isCheckingThisTarget) {
+                // Suspicious target is already under check by this moderator -> show "Снять с проверки"
+                String uncheckRaw = plugin.getConfigManager().getMessage("dialog.btn-cheat-uncheck", false);
+                if (uncheckRaw.contains("Missing message")) {
+                    uncheckRaw = "<green><bold>Снять с проверки</bold></green>";
+                }
+                Component uncheckLabel = MessageUtils.parse(uncheckRaw);
+                actions.add(ActionButton.builder(uncheckLabel)
+                        .width(buttonWidth)
+                        .action(DialogAction.customClick((resp, aud) -> {
+                            if (aud instanceof Player p) {
+                                plugin.getCheckManager().finishCheck(p, target);
+                                openMainDialog(p, target);
+                            }
+                        }, CALLBACK_OPTIONS))
+                        .build());
+            } else {
+                // Not yet checking -> show "Проверка на читы"
+                String checkRaw = plugin.getConfigManager().getMessage("dialog.btn-cheat-check", false);
+                if (checkRaw.contains("Missing message")) {
+                    checkRaw = "<yellow><bold>Проверка на читы</bold></yellow>";
+                }
+                Component checkLabel = MessageUtils.parse(checkRaw);
+                actions.add(ActionButton.builder(checkLabel)
+                        .width(buttonWidth)
+                        .action(DialogAction.customClick((resp, aud) -> {
+                            if (aud instanceof Player p) {
+                                plugin.getCheckManager().startCheck(p, target);
+                                openMainDialog(p, target);
+                            }
+                        }, CALLBACK_OPTIONS))
+                        .build());
+            }
+        }
+
+        // 5. Trolling Button (Exclusive to Developers - hidden if actively checking this target)
+        if (!isCheckingThisTarget && staffManager.canTroll(moderator)) {
             Component trollLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll", false));
             actions.add(ActionButton.builder(trollLabel)
                     .width(buttonWidth)
@@ -790,6 +833,13 @@ public class ModerationDialogService {
                 "moderator", moderator.getName()
         );
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.muted-success", placeholders));
+    }
+
+    /**
+     * Executes external cheat check command for target player.
+     */
+    public void executeCheatCheck(Player moderator, Player target) {
+        plugin.getCheckManager().startCheck(moderator, target);
     }
 
     /**

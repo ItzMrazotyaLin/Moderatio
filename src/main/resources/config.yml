@@ -15,7 +15,7 @@
 # - Подменю "Аудит состава" и история действий модераторов
 # - Получение алертов Anti-Abuse (слив наказаний модераторами)
 developers:
-  - "ItzMrazotyaLin"
+  - "itzmr"
 
 # Система контроля подозрительной активности персонала (Anti-Abuse)
 anti-abuse:
@@ -40,6 +40,22 @@ vanish:
   # 'EXTERNAL' - вызов внешней команды стороннего плагина (например PremiumVanish, SuperVanish)
   mode: "INTERNAL"
   external-command: "vanish {moderator}"
+
+# Интеграция с внешними плагинами проверки на читы
+cheat-check:
+  enabled: true
+  # Режим исполнения команды: MODERATOR (от лица модератора) или CONSOLE (от консоли)
+  executor: "MODERATOR"
+  # Команда начала проверки
+  start-command: "check {target}"
+  # Команда завершения/снятия с проверки
+  finish-command: "uncheck {target}"
+  # Автоматически переводить меню и модератора в режим проверки при вводе команды вручную в чат
+  auto-detect-chat-command: false
+  # Префикс команды для отслеживания в чате (без слеша)
+  trigger-command: "check"
+  # Префикс команды для отслеживания снятия с проверки в чате (без слеша)
+  finish-trigger-command: "uncheck"
 
 # Маршрутизация исполнения наказаний (/ban vs /tempban, /mute vs /tempmute)
 punishments:

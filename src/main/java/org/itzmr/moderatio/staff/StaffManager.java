@@ -2,6 +2,8 @@ package org.itzmr.moderatio.staff;
 
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -13,6 +15,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,6 +27,7 @@ public class StaffManager {
 
     private final Moderatio plugin;
     private final Set<UUID> activeStaff = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
     private final Set<UUID> frozenPlayers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> noFallPlayers = ConcurrentHashMap.newKeySet();
     private final File frozenFile;
@@ -97,6 +101,9 @@ public class StaffManager {
         if (player == null) return;
         activeStaff.add(player.getUniqueId());
 
+        // Fix original location before applying staff flags
+        originalLocations.putIfAbsent(player.getUniqueId(), player.getLocation().clone());
+
         applyStaffFlags(player);
 
         // 1. Automatically enable vanish by default
@@ -111,7 +118,7 @@ public class StaffManager {
     }
 
     /**
-     * Disables Staff Mode for a player.
+     * Disables Staff Mode for a player and restores their original location.
      *
      * @param player  the player
      * @param sendMsg whether to send disabled message
@@ -127,6 +134,22 @@ public class StaffManager {
         }
         if (plugin.getGlowingManager() != null) {
             plugin.getGlowingManager().cleanup(player);
+        }
+        if (plugin.getCheckManager() != null) {
+            plugin.getCheckManager().onModeratorExitStaff(player);
+        }
+
+        // Return to original location
+        Location savedLoc = originalLocations.remove(player.getUniqueId());
+        if (savedLoc != null && savedLoc.getWorld() != null) {
+            World world = Bukkit.getWorld(savedLoc.getWorld().getUID());
+            if (world == null) {
+                world = Bukkit.getWorld(savedLoc.getWorld().getName());
+            }
+            if (world != null) {
+                savedLoc.setWorld(world);
+                player.teleport(savedLoc);
+            }
         }
 
         plugin.getAuditService().logAction(player, "STAFF_MODE_DISABLE", player.getName(), null);
@@ -240,18 +263,27 @@ public class StaffManager {
 
     /**
      * Cleans up all staff modes on server shutdown or plugin disable.
+     * Restores original positions, clears vanish and staff flags.
      * Note: Persistent frozen players are preserved and saved!
      */
     public void cleanup() {
-        for (UUID uuid : activeStaff) {
+        for (UUID uuid : new ArrayList<>(activeStaff)) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null && player.isOnline()) {
-                removeStaffFlags(player);
+                disableStaffMode(player, false);
             }
         }
         activeStaff.clear();
+        originalLocations.clear();
         saveFrozenPlayers();
         noFallPlayers.clear();
+    }
+
+    /**
+     * Gets the saved original location of a player before entering Staff Mode.
+     */
+    public Location getOriginalLocation(UUID uuid) {
+        return uuid != null ? originalLocations.get(uuid) : null;
     }
 
     /**
