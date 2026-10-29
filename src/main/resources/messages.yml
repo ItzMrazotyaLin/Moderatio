@@ -32,7 +32,7 @@ glowing:
 
 audit:
   title: "<gradient:#38ef7d:#11998e>Аудит состава персонала</gradient>"
-  abuse-alert: "<red><bold>[ВНИМАНИЕ]</bold> Подозрительная активность: модератор <yellow>{moderator}</yellow> выдал 4+ наказаний за минуту!"
+  abuse-alert: "<red><bold>[ВНИМАНИЕ]</bold> Подозрительная активность: модератор <yellow>{moderator}</yellow> достиг лимита наказаний ({count}/{limit} за {interval}с)!"
 
 staff-menu:
   title: "<gradient:#38ef7d:#11998e>Меню модератора</gradient>"
@@ -87,6 +87,7 @@ dialog:
 punishment:
   banned-success: "<green>Игрок <white>{target}</white> успешно заблокирован на <yellow>{duration}</yellow>! Причина: <red>{reason}</red>"
   muted-success: "<green>Наказание (мут) отправлено на выполнение для игрока <white>{target}</white>!"
+  limit-reached: "<red>Вы исчерпали лимит наказаний ({limit} за {interval}с). Действие заблокировано!</red>"
   freeze-quit-alert: "<red>Игрок <white>{player}</white> вышел с сервера во время заморозки!</red>"
   freeze-rejoin-alert: "<red>Игрок <white>{player}</white> зашел на сервер и всё ещё находится в заморозке!</red>"
   freeze-join-warning: "<red>Вы находитесь в режиме заморозки модерацией! Перемещение заблокировано.</red>"

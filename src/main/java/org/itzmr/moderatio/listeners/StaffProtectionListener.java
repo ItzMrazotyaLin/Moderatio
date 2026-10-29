@@ -16,6 +16,7 @@ import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -213,6 +214,41 @@ public class StaffProtectionListener implements Listener {
             commands.remove("moderatio:sm");
             commands.remove("moderatio:staffmode");
             commands.remove("moderatio:mod");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        String message = event.getMessage().trim();
+        String lower = message.toLowerCase();
+
+        boolean isPunishmentCmd = lower.startsWith("/ban ") || lower.startsWith("/tempban ")
+                || lower.startsWith("/mute ") || lower.startsWith("/tempmute ")
+                || lower.startsWith("/kick ")
+                || lower.startsWith("/minecraft:ban ") || lower.startsWith("/minecraft:tempban ")
+                || lower.startsWith("/minecraft:mute ") || lower.startsWith("/minecraft:tempmute ")
+                || lower.startsWith("/minecraft:kick ");
+
+        if (!isPunishmentCmd) {
+            return;
+        }
+
+        if (staffManager.isPunishmentBlocked(player)) {
+            event.setCancelled(true);
+            int limit = plugin.getConfigManager().getAntiAbusePunishmentLimit();
+            int interval = plugin.getConfigManager().getAntiAbuseCheckIntervalSeconds();
+            String blockedMsg = plugin.getConfigManager().getMessage("punishment.limit-reached",
+                    Map.of("limit", String.valueOf(limit), "interval", String.valueOf(interval)), false);
+            if (blockedMsg.contains("Missing message")) {
+                blockedMsg = "<red>Вы исчерпали лимит наказаний (" + limit + " за " + interval + "с). Действие заблокировано!</red>";
+            }
+            MessageUtils.send(player, blockedMsg);
+            return;
+        }
+
+        if (!plugin.getAuditService().isDeveloper(player)) {
+            plugin.getAuditService().checkPunishmentAbuse(player);
         }
     }
 }

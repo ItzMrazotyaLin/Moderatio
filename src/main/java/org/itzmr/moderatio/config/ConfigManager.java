@@ -193,4 +193,25 @@ public class ConfigManager {
     public List<String> getTrollingWhitelist() {
         return config.getStringList("trolling.whitelist");
     }
+
+    /**
+     * Gets configured punishment limit for anti-abuse window.
+     */
+    public int getAntiAbusePunishmentLimit() {
+        return config.getInt("anti-abuse.punishment-limit", 2);
+    }
+
+    /**
+     * Gets configured anti-abuse check interval in seconds.
+     */
+    public int getAntiAbuseCheckIntervalSeconds() {
+        return config.getInt("anti-abuse.check-interval-seconds", 60);
+    }
+
+    /**
+     * Checks if punishments should be blocked when limit is reached.
+     */
+    public boolean isAntiAbuseBlockPunishmentsOnLimit() {
+        return config.getBoolean("anti-abuse.block-punishments-on-limit", true);
+    }
 }

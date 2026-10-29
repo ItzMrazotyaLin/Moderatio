@@ -275,6 +275,10 @@ public class ModerationDialogService {
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
+                        if (staffManager.isPunishmentBlocked(p)) {
+                            sendPunishmentBlockedMessage(p);
+                            return;
+                        }
                         openBanTemplatesDialog(p, target);
                     }
                 }, CALLBACK_OPTIONS))
@@ -286,6 +290,10 @@ public class ModerationDialogService {
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
+                        if (staffManager.isPunishmentBlocked(p)) {
+                            sendPunishmentBlockedMessage(p);
+                            return;
+                        }
                         openMuteTemplatesDialog(p, target);
                     }
                 }, CALLBACK_OPTIONS))
@@ -653,6 +661,11 @@ public class ModerationDialogService {
             return;
         }
 
+        if (staffManager.isPunishmentBlocked(moderator)) {
+            sendPunishmentBlockedMessage(moderator);
+            return;
+        }
+
         String mode = plugin.getConfig().getString("punishments.mode",
                 plugin.getConfig().getString("ban-system.mode", "CONSOLE_COMMAND")).toUpperCase();
         boolean isPerm = isPermanentDuration(durationStr);
@@ -720,6 +733,11 @@ public class ModerationDialogService {
     public void executeMute(Player moderator, Player target, String commandTemplate, String duration, String reason) {
         if (!target.isOnline()) {
             MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
+        if (staffManager.isPunishmentBlocked(moderator)) {
+            sendPunishmentBlockedMessage(moderator);
             return;
         }
 
@@ -862,6 +880,17 @@ public class ModerationDialogService {
         plugin.getAuditService().logAction(moderator, "TROLL_LIGHTNING", target.getName(), null);
         Map<String, String> placeholders = Map.of("target", target.getName());
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.troll-lightning", placeholders));
+    }
+
+    private void sendPunishmentBlockedMessage(Player moderator) {
+        int limit = plugin.getConfigManager().getAntiAbusePunishmentLimit();
+        int interval = plugin.getConfigManager().getAntiAbuseCheckIntervalSeconds();
+        String blockedMsg = plugin.getConfigManager().getMessage("punishment.limit-reached",
+                Map.of("limit", String.valueOf(limit), "interval", String.valueOf(interval)), false);
+        if (blockedMsg.contains("Missing message")) {
+            blockedMsg = "<red>Вы исчерпали лимит наказаний (" + limit + " за " + interval + "с). Действие заблокировано!</red>";
+        }
+        MessageUtils.send(moderator, blockedMsg);
     }
 
     /**

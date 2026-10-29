@@ -69,6 +69,9 @@ public final class Moderatio extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (this.glowingManager != null) {
+            this.glowingManager.cleanupAll();
+        }
         if (this.staffManager != null) {
             this.staffManager.cleanup();
         }

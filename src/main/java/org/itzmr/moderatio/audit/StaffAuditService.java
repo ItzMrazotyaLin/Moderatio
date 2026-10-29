@@ -29,8 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class StaffAuditService {
 
     private static final int MAX_RECENT_ACTIONS = 10;
-    private static final long ABUSE_WINDOW_MS = 60_000L;
-    private static final int ABUSE_THRESHOLD = 4;
 
     private final Moderatio plugin;
     private final File logFile;
@@ -139,6 +137,34 @@ public class StaffAuditService {
     }
 
     /**
+     * Checks if a moderator has exhausted their allowed punishment limit within the time window.
+     * Developers are always exempt.
+     */
+    public boolean isPunishmentBlocked(Player moderator) {
+        if (moderator == null || isDeveloper(moderator)) {
+            return false;
+        }
+
+        if (!plugin.getConfigManager().isAntiAbuseBlockPunishmentsOnLimit()) {
+            return false;
+        }
+
+        int limit = plugin.getConfigManager().getAntiAbusePunishmentLimit();
+        long windowMs = plugin.getConfigManager().getAntiAbuseCheckIntervalSeconds() * 1000L;
+        long now = System.currentTimeMillis();
+
+        List<Long> timestamps = punishmentHistory.get(moderator.getUniqueId());
+        if (timestamps == null || timestamps.isEmpty()) {
+            return false;
+        }
+
+        synchronized (timestamps) {
+            timestamps.removeIf(ts -> now - ts > windowMs);
+            return timestamps.size() >= limit;
+        }
+    }
+
+    /**
      * Tracks punishments issued by a moderator and triggers an alert if suspicious activity is detected.
      */
     public void checkPunishmentAbuse(Player moderator) {
@@ -153,24 +179,30 @@ public class StaffAuditService {
 
         UUID uuid = moderator.getUniqueId();
         long now = System.currentTimeMillis();
+        int limit = plugin.getConfigManager().getAntiAbusePunishmentLimit();
+        long windowMs = plugin.getConfigManager().getAntiAbuseCheckIntervalSeconds() * 1000L;
+        int intervalSeconds = plugin.getConfigManager().getAntiAbuseCheckIntervalSeconds();
 
         List<Long> timestamps = punishmentHistory.computeIfAbsent(uuid, k -> Collections.synchronizedList(new ArrayList<>()));
         synchronized (timestamps) {
             timestamps.add(now);
-            timestamps.removeIf(ts -> now - ts > ABUSE_WINDOW_MS);
+            timestamps.removeIf(ts -> now - ts > windowMs);
 
-            if (timestamps.size() >= ABUSE_THRESHOLD) {
-                sendAbuseAlert(moderator, timestamps.size());
+            if (timestamps.size() >= limit) {
+                sendAbuseAlert(moderator, timestamps.size(), limit, intervalSeconds);
             }
         }
     }
 
-    private void sendAbuseAlert(Player moderator, int count) {
+    private void sendAbuseAlert(Player moderator, int count, int limit, int intervalSeconds) {
         String alertMsg = plugin.getConfigManager().getMessage("audit.abuse-alert",
-                Map.of("moderator", moderator.getName(), "count", String.valueOf(count)), false);
+                Map.of("moderator", moderator.getName(),
+                        "count", String.valueOf(count),
+                        "limit", String.valueOf(limit),
+                        "interval", String.valueOf(intervalSeconds)), false);
         if (alertMsg.contains("Missing message")) {
             alertMsg = "<red><bold>[ВНИМАНИЕ]</bold> Подозрительная активность: модератор <yellow>"
-                    + moderator.getName() + "</yellow> выдал 4+ наказаний за минуту!";
+                    + moderator.getName() + "</yellow> достиг лимита наказаний (" + count + "/" + limit + " за " + intervalSeconds + "с)!";
         }
 
         // Alert is sent ONLY to online developers (excluding the perpetrator)
@@ -180,12 +212,12 @@ public class StaffAuditService {
             }
         }
 
-        plugin.getLogger().warning("Anti-Abuse Alert: Moderator " + moderator.getName() + " issued " + count + " punishments within 60 seconds!");
+        plugin.getLogger().warning("Anti-Abuse Alert: Moderator " + moderator.getName() + " reached punishment limit (" + count + "/" + limit + " within " + intervalSeconds + "s)!");
 
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String timeStr = LocalDateTime.now().format(dtf);
-        String logLine = String.format("[%s] [SUSPICIOUS_ACTIVITY] Модератор %s (UUID: %s) выдал %d наказаний за последние 60 секунд!",
-                timeStr, moderator.getName(), moderator.getUniqueId(), count);
+        String logLine = String.format("[%s] [SUSPICIOUS_ACTIVITY] [LIMIT_REACHED] Модератор %s (UUID: %s) достиг лимита наказаний (%d/%d за %dс)!",
+                timeStr, moderator.getName(), moderator.getUniqueId(), count, limit, intervalSeconds);
         writeRawLog(logLine);
     }
 

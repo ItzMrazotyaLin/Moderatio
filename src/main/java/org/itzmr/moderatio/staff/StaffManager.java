@@ -220,6 +220,14 @@ public class StaffManager {
     }
 
     /**
+     * Checks if a moderator has reached their punishment limit and is blocked from issuing punishments.
+     */
+    public boolean isPunishmentBlocked(Player moderator) {
+        if (moderator == null) return false;
+        return plugin.getAuditService().isPunishmentBlocked(moderator);
+    }
+
+    /**
      * Checks if a moderator is allowed to perform trolling actions (exclusive to developers).
      *
      * @param moderator the moderator
