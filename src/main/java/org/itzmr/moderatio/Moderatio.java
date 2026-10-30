@@ -12,10 +12,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.itzmr.moderatio.audit.StaffAuditService;
 import org.itzmr.moderatio.commands.BanCommand;
+import org.itzmr.moderatio.commands.CheckCommand;
+import org.itzmr.moderatio.commands.ContactCommand;
 import org.itzmr.moderatio.commands.ModeratioCommand;
 import org.itzmr.moderatio.commands.MuteCommand;
 import org.itzmr.moderatio.commands.StaffCommand;
 import org.itzmr.moderatio.commands.UnbanCommand;
+import org.itzmr.moderatio.commands.UncheckCommand;
 import org.itzmr.moderatio.commands.UnmuteCommand;
 import org.itzmr.moderatio.commands.UnwarnCommand;
 import org.itzmr.moderatio.commands.WarnCommand;
@@ -27,6 +30,7 @@ import org.itzmr.moderatio.listeners.PunishmentListener;
 import org.itzmr.moderatio.listeners.StaffInteractListener;
 import org.itzmr.moderatio.listeners.StaffProtectionListener;
 import org.itzmr.moderatio.listeners.StaffWorldListener;
+import org.itzmr.moderatio.listeners.WarnMenuListener;
 import org.itzmr.moderatio.punishments.PunishmentManager;
 import org.itzmr.moderatio.staff.CheckManager;
 import org.itzmr.moderatio.staff.GlowingManager;
@@ -86,6 +90,7 @@ public final class Moderatio extends JavaPlugin {
         pm.registerEvents(new PunishmentListener(this), this);
         pm.registerEvents(this.vanishManager, this);
         pm.registerEvents(this.checkManager, this);
+        pm.registerEvents(new WarnMenuListener(this), this);
 
         // 5. Register Commands
         registerCommands();
@@ -119,6 +124,10 @@ public final class Moderatio extends JavaPlugin {
         UnmuteCommand unmuteCmd = new UnmuteCommand(this);
         WarnCommand warnCmd = new WarnCommand(this);
         UnwarnCommand unwarnCmd = new UnwarnCommand(this);
+        CheckCommand checkCmd = new CheckCommand(this);
+        UncheckCommand uncheckCmd = new UncheckCommand(this);
+        ContactCommand discordCmd = new ContactCommand(this, "Discord");
+        ContactCommand anydeskCmd = new ContactCommand(this, "AnyDesk");
 
         registerPluginCommand("staff", staffCmd, staffCmd, "Вход в режим модератора", "/staff", List.of("sm", "staffmode"));
         registerPluginCommand("moderatio", moderatioCmd, moderatioCmd, "Главная команда управления Moderatio", "/moderatio [reload]", List.of("mod"));
@@ -128,6 +137,10 @@ public final class Moderatio extends JavaPlugin {
         registerPluginCommand("unmute", unmuteCmd, unmuteCmd, "Разблокировать чат игроку", "/unmute <игрок>", List.of("munmute"));
         registerPluginCommand("warn", warnCmd, warnCmd, "Выдать предупреждение игроку", "/warn <игрок> [CHAT|GAME] [причина]", List.of("mwarn"));
         registerPluginCommand("unwarn", unwarnCmd, unwarnCmd, "Снять последнее предупреждение с игрока", "/unwarn <игрок> <причина>", List.of("munwarn"));
+        registerPluginCommand("check", checkCmd, checkCmd, "Начать проверку игрока на читы", "/check <игрок>", List.of("mcheck"));
+        registerPluginCommand("uncheck", uncheckCmd, uncheckCmd, "Завершить проверку игрока на читы", "/uncheck <игрок> [passed/fail]", List.of("muncheck"));
+        registerPluginCommand("discord", discordCmd, discordCmd, "Отправить Discord модератору", "/discord <контакт>", List.of("mdiscord"));
+        registerPluginCommand("anydesk", anydeskCmd, anydeskCmd, "Отправить AnyDesk модератору", "/anydesk <код>", List.of("manydesk"));
     }
 
     private void registerPluginCommand(String name, CommandExecutor executor, TabCompleter completer, String description, String usage, List<String> aliases) {

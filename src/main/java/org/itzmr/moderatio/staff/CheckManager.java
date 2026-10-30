@@ -1,15 +1,29 @@
 package org.itzmr.moderatio.staff;
 
+import io.papermc.paper.event.player.AsyncChatEvent;
+import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scheduler.BukkitTask;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.utils.MessageUtils;
+import org.itzmr.moderatio.utils.TimeUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -18,17 +32,17 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages active cheat check sessions between moderators and suspects.
- * Tracks session states, executes start/finish commands, auto-detects chat commands,
- * and handles cleanup on disconnect or exit from Staff Mode.
+ * Manages native in-house cheat check sessions, suspect isolation,
+ * screen titles, private check-chat routing, and quit-ban handling.
  */
 public class CheckManager implements Listener {
 
     private final Moderatio plugin;
-    // Moderator UUID -> Target UUID
-    private final Map<UUID, UUID> activeChecks = new ConcurrentHashMap<>();
-    // Target UUID -> Moderator UUID
-    private final Map<UUID, UUID> reverseChecks = new ConcurrentHashMap<>();
+
+    // Suspect UUID -> CheckSession
+    private final Map<UUID, CheckSession> sessionsBySuspect = new ConcurrentHashMap<>();
+    // Moderator UUID -> CheckSession
+    private final Map<UUID, CheckSession> sessionsByModerator = new ConcurrentHashMap<>();
 
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -44,7 +58,7 @@ public class CheckManager implements Listener {
     }
 
     public boolean isUnderCheck(UUID targetId) {
-        return targetId != null && reverseChecks.containsKey(targetId);
+        return targetId != null && sessionsBySuspect.containsKey(targetId);
     }
 
     /**
@@ -55,7 +69,7 @@ public class CheckManager implements Listener {
     }
 
     public boolean isChecking(UUID moderatorId) {
-        return moderatorId != null && activeChecks.containsKey(moderatorId);
+        return moderatorId != null && sessionsByModerator.containsKey(moderatorId);
     }
 
     /**
@@ -63,155 +77,416 @@ public class CheckManager implements Listener {
      */
     public boolean isCheckingTarget(Player moderator, Player target) {
         if (moderator == null || target == null) return false;
-        UUID targetId = activeChecks.get(moderator.getUniqueId());
-        return targetId != null && targetId.equals(target.getUniqueId());
+        CheckSession session = sessionsByModerator.get(moderator.getUniqueId());
+        return session != null && session.getSuspectUuid().equals(target.getUniqueId());
     }
 
-    public UUID getTargetIdUnderCheck(UUID moderatorId) {
-        return moderatorId != null ? activeChecks.get(moderatorId) : null;
+    public CheckSession getSessionBySuspect(UUID suspectId) {
+        return suspectId != null ? sessionsBySuspect.get(suspectId) : null;
     }
 
-    public UUID getModeratorIdChecking(UUID targetId) {
-        return targetId != null ? reverseChecks.get(targetId) : null;
+    public CheckSession getSessionByModerator(UUID moderatorId) {
+        return moderatorId != null ? sessionsByModerator.get(moderatorId) : null;
     }
 
-    public Map<UUID, UUID> getActiveChecks() {
-        return Collections.unmodifiableMap(activeChecks);
+    public Map<UUID, CheckSession> getActiveSessions() {
+        return Collections.unmodifiableMap(sessionsBySuspect);
     }
 
     /**
-     * Starts a cheat check session, executes the configured start-command,
-     * and logs the event to disk and memory.
+     * Starts a cheat check session between moderator and suspect.
      */
-    public void startCheck(Player moderator, Player target) {
-        if (moderator == null || target == null || !moderator.isOnline() || !target.isOnline()) {
+    public boolean startCheck(Player moderator, Player suspect) {
+        if (moderator == null || suspect == null || !moderator.isOnline() || !suspect.isOnline()) {
+            return false;
+        }
+
+        if (moderator.getUniqueId().equals(suspect.getUniqueId())) {
+            MessageUtils.send(moderator, "<red>Вы не можете проверять самого себя!</red>");
+            return false;
+        }
+
+        if (isUnderCheck(suspect.getUniqueId())) {
+            CheckSession existing = sessionsBySuspect.get(suspect.getUniqueId());
+            String modName = (existing != null) ? existing.getModeratorName() : "другим модератором";
+            MessageUtils.send(moderator, "<red>Игрок <white>" + suspect.getName() + "</white> уже находится на проверке у модератора <yellow>" + modName + "</yellow>!</red>");
+            return false;
+        }
+
+        if (isChecking(moderator.getUniqueId())) {
+            CheckSession current = sessionsByModerator.get(moderator.getUniqueId());
+            String targetName = (current != null) ? current.getSuspectName() : "другого игрока";
+            MessageUtils.send(moderator, "<red>Вы уже проводите проверку игрока <white>" + targetName + "</white>! Сначала завершите её через /uncheck.</red>");
+            return false;
+        }
+
+        int totalSeconds = plugin.getConfigManager().getCheatCheckTimerSeconds();
+        if (totalSeconds <= 0) totalSeconds = 180;
+
+        CheckSession session = new CheckSession(
+                moderator.getUniqueId(),
+                moderator.getName(),
+                suspect.getUniqueId(),
+                suspect.getName(),
+                totalSeconds
+        );
+
+        sessionsBySuspect.put(suspect.getUniqueId(), session);
+        sessionsByModerator.put(moderator.getUniqueId(), session);
+
+        // Notify suspect in chat
+        MessageUtils.send(suspect, "<red><bold>[ВНИМАНИЕ]</bold> Вы были вызваны на проверку на читы модератором <yellow>" + moderator.getName() + "</yellow>!</red>");
+        MessageUtils.send(suspect, "<yellow>У вас есть <white>" + (totalSeconds / 60) + "</white> мин на предоставление контактов. Выход с сервера наказуем баном!</yellow>");
+        String contactText = plugin.getConfigManager().getCheatCheckDiscordContactText();
+        MessageUtils.send(suspect, contactText);
+
+        // Notify moderator
+        MessageUtils.send(moderator, "<green>Вы начали проверку на читы игрока <white>" + suspect.getName() + "</white> (Таймер: <yellow>" + (totalSeconds / 60) + " мин</yellow>).</green>");
+
+        // Repeating 1-second timer for Title, BossBar & Contact repetition
+        Title.Times times = Title.Times.times(Duration.ZERO, Duration.ofMillis(1200), Duration.ZERO);
+        Component mainTitle = MessageUtils.parse("<red><bold>ПРОВЕРКА НА ЧИТЫ</bold></red>");
+
+        String initialMmSs = String.format("%02d:%02d", totalSeconds / 60, totalSeconds % 60);
+        BossBar bossBar = BossBar.bossBar(
+                MessageUtils.parse("<red><bold>ПРОВЕРКА НА ЧИТЫ</bold></red> <gray>| Осталось: <yellow>" + initialMmSs + "</yellow></gray>"),
+                1.0f,
+                BossBar.Color.RED,
+                BossBar.Overlay.PROGRESS
+        );
+        session.setBossBar(bossBar);
+
+        moderator.showBossBar(bossBar);
+        suspect.showBossBar(bossBar);
+
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            Player currentSuspect = Bukkit.getPlayer(session.getSuspectUuid());
+            if (currentSuspect == null || !currentSuspect.isOnline()) {
+                session.stopTimer();
+                return;
+            }
+
+            int remaining = session.decrementSeconds();
+            float progress = Math.max(0.0f, Math.min(1.0f, (float) remaining / (float) session.getTotalSeconds()));
+            bossBar.progress(progress);
+
+            String formattedTime = String.format("%02d:%02d", Math.max(0, remaining) / 60, Math.max(0, remaining) % 60);
+
+            if (session.hasProvidedContact()) {
+                bossBar.name(MessageUtils.parse("<green><bold>ПРОВЕРКА НА ЧИТЫ</bold></green> <gray>| Данные получены (<gold>" + session.getProvidedService() + "</gold>)</gray>"));
+            } else {
+                bossBar.name(MessageUtils.parse("<red><bold>ПРОВЕРКА НА ЧИТЫ</bold></red> <gray>| Осталось: <yellow>" + formattedTime + "</yellow></gray>"));
+            }
+
+            Component subTitle = MessageUtils.parse("<yellow>Осталось: <white>" + formattedTime + "</white></yellow>");
+            currentSuspect.showTitle(Title.title(mainTitle, subTitle, times));
+
+            // Repeat contact instructions every 30 seconds only if contact has NOT yet been provided
+            if (!session.hasProvidedContact() && remaining > 0 && remaining % 30 == 0) {
+                MessageUtils.send(currentSuspect, contactText);
+            }
+
+            if (remaining <= 0) {
+                if (!session.hasProvidedContact() && plugin.getConfigManager().isCheatCheckTimeoutBan()) {
+                    session.stopTimer();
+
+                    UUID modUuid = session.getModeratorUuid();
+                    String modName = session.getModeratorName();
+                    String durationStr = plugin.getConfigManager().getCheatCheckTimeoutBanDuration();
+                    String reason = plugin.getConfigManager().getCheatCheckTimeoutBanReason();
+                    long durationMillis = TimeUtils.parseDurationToMillis(durationStr);
+
+                    plugin.getPunishmentManager().ban(currentSuspect.getUniqueId(), currentSuspect.getName(), modUuid, modName, reason, durationMillis);
+
+                    String alert = "<red>[ВНИМАНИЕ] Игрок <yellow>" + currentSuspect.getName() + "</yellow> не предоставил контакты вовремя и был заблокирован!</red>";
+                    for (Player staff : Bukkit.getOnlinePlayers()) {
+                        if (staff.hasPermission("moderatio.staff") || plugin.getAuditService().isDeveloper(staff)) {
+                            MessageUtils.send(staff, alert);
+                        }
+                    }
+
+                    plugin.getAuditService().logAction(null, "CHECK_TIMEOUT_BAN", currentSuspect.getName(), "Moderator: " + modName + ", Reason: " + reason);
+                    String timeStr = LocalDateTime.now().format(DTF);
+                    plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_TIMEOUT_BAN] Игрок %s забанен за отказ от проверки (таймаут) модератором %s (Бан: %s)",
+                            timeStr, currentSuspect.getName(), modName, durationStr));
+
+                    finishCheck(null, currentSuspect, false);
+                } else if (!session.hasProvidedContact()) {
+                    MessageUtils.send(currentSuspect, "<red><bold>ВРЕМЯ ИСТЕКЛО!</bold> Если вы не предоставили контакты, вы будете заблокированы.</red>");
+                    Player currentMod = Bukkit.getPlayer(session.getModeratorUuid());
+                    if (currentMod != null && currentMod.isOnline()) {
+                        MessageUtils.send(currentMod, "<red>[ВАРН] Время на проверку игрока <white>" + session.getSuspectName() + "</white> истекло!</red>");
+                    }
+                    session.stopTimer();
+                } else {
+                    session.stopTimer();
+                }
+            }
+        }, 0L, 20L);
+
+        session.setTimerTask(task);
+
+        // Action logging
+        plugin.getAuditService().logAction(moderator, "CHECK_STARTED", suspect.getName(), "Timer: " + totalSeconds + "s");
+        String timeStr = LocalDateTime.now().format(DTF);
+        String logLine = String.format("[%s] [CHECK_STARTED] Модератор %s начал проверку игрока %s",
+                timeStr, moderator.getName(), suspect.getName());
+        plugin.getAuditService().writeRawLog(logLine);
+
+        return true;
+    }
+
+    /**
+     * Finishes a cheat check session (defaulting to passed = true).
+     */
+    public boolean finishCheck(Player moderator, Player suspect) {
+        return finishCheck(moderator, suspect, true);
+    }
+
+    /**
+     * Finishes a cheat check session, unfreezes suspect, and notifies both parties.
+     */
+    public boolean finishCheck(Player moderator, Player suspect, boolean passed) {
+        UUID suspectId = (suspect != null) ? suspect.getUniqueId() : null;
+        if (suspectId == null && moderator != null) {
+            CheckSession modSession = sessionsByModerator.get(moderator.getUniqueId());
+            if (modSession != null) {
+                suspectId = modSession.getSuspectUuid();
+                suspect = Bukkit.getPlayer(suspectId);
+            }
+        }
+
+        if (suspectId == null) {
+            return false;
+        }
+
+        CheckSession session = sessionsBySuspect.remove(suspectId);
+        if (session != null) {
+            sessionsByModerator.remove(session.getModeratorUuid());
+            session.stopTimer();
+        }
+
+        String suspectName = (suspect != null) ? suspect.getName() : (session != null ? session.getSuspectName() : suspectId.toString());
+        String modName = (moderator != null) ? moderator.getName() : (session != null ? session.getModeratorName() : "Console");
+
+        if (suspect != null && suspect.isOnline()) {
+            suspect.clearTitle();
+            if (passed) {
+                MessageUtils.send(suspect, "<green>Проверка успешно завершена! Приятной игры.</green>");
+            } else {
+                MessageUtils.send(suspect, "<red>Проверка на читы завершена со статусом: <bold>НЕ ПРОЙДЕНА</bold>.</red>");
+            }
+        }
+
+        if (moderator != null && moderator.isOnline()) {
+            if (passed) {
+                MessageUtils.send(moderator, "<green>Проверка игрока <white>" + suspectName + "</white> успешно завершена (Читы не обнаружены).</green>");
+            } else {
+                MessageUtils.send(moderator, "<yellow>Проверка игрока <white>" + suspectName + "</white> завершена со статусом: <red>НЕ ПРОЙДЕНА</red>.</yellow>");
+            }
+        }
+
+        String actionType = passed ? "CHECK_PASSED" : "CHECK_CANCELLED";
+        if (moderator != null) {
+            plugin.getAuditService().logAction(moderator, actionType, suspectName, null);
+        }
+        String timeStr = LocalDateTime.now().format(DTF);
+        String logLine = String.format("[%s] [%s] Модератор %s завершил проверку игрока %s",
+                timeStr, actionType, modName, suspectName);
+        plugin.getAuditService().writeRawLog(logLine);
+
+        return true;
+    }
+
+    /**
+     * Handles quit event during active check session (issues auto-ban if enabled).
+     */
+    public void handleQuit(Player suspect) {
+        if (suspect == null) return;
+        UUID suspectId = suspect.getUniqueId();
+        CheckSession session = sessionsBySuspect.remove(suspectId);
+        if (session == null) {
+            // Check if player was a moderator checking someone
+            CheckSession modSession = sessionsByModerator.remove(suspectId);
+            if (modSession != null) {
+                sessionsBySuspect.remove(modSession.getSuspectUuid());
+                modSession.stopTimer();
+                Player target = Bukkit.getPlayer(modSession.getSuspectUuid());
+                if (target != null && target.isOnline()) {
+                    target.clearTitle();
+                    MessageUtils.send(target, "<yellow>Модератор, проводивший проверку, покинул сервер. Проверка временно приостановлена.</yellow>");
+                }
+            }
             return;
         }
 
-        activeChecks.put(moderator.getUniqueId(), target.getUniqueId());
-        reverseChecks.put(target.getUniqueId(), moderator.getUniqueId());
+        // Suspect left during check!
+        sessionsByModerator.remove(session.getModeratorUuid());
+        session.stopTimer();
 
-        String template = plugin.getConfigManager().getCheatCheckStartCommand();
-        if (template == null || template.isBlank()) {
-            template = "check {target}";
+        boolean autoBan = plugin.getConfigManager().isCheatCheckAutoBanOnQuit();
+        String durationStr = plugin.getConfigManager().getCheatCheckAutoBanDuration();
+        String reason = plugin.getConfigManager().getCheatCheckAutoBanReason();
+        long durationMillis = TimeUtils.parseDurationToMillis(durationStr);
+
+        UUID modUuid = session.getModeratorUuid();
+        String modName = session.getModeratorName();
+
+        if (autoBan) {
+            plugin.getPunishmentManager().ban(suspect.getUniqueId(), suspect.getName(), modUuid, modName, reason, durationMillis);
         }
 
-        String formattedCmd = template
-                .replace("{target}", target.getName())
-                .replace("{moderator}", moderator.getName());
-
-        final String finalCmd = formattedCmd.startsWith("/") ? formattedCmd.substring(1).trim() : formattedCmd.trim();
-        String executorMode = plugin.getConfigManager().getCheatCheckExecutor();
-
-        Runnable task = () -> {
-            if ("CONSOLE".equalsIgnoreCase(executorMode)) {
-                plugin.getLogger().info("[Moderatio] [CHEAT_CHECK] Executing console start command: " + finalCmd);
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-            } else {
-                plugin.getLogger().info("[Moderatio] [CHEAT_CHECK] Moderator " + moderator.getName() + " executing start command: " + finalCmd);
-                moderator.performCommand(finalCmd);
+        // Send alert to all online staff and developers
+        String alert = "<red>[ВНИМАНИЕ] Игрок <yellow>" + suspect.getName() + "</yellow> покинул сервер во время проверки и был заблокирован!</red>";
+        for (Player staff : Bukkit.getOnlinePlayers()) {
+            if (staff.hasPermission("moderatio.staff") || plugin.getAuditService().isDeveloper(staff)) {
+                MessageUtils.send(staff, alert);
             }
-        };
-
-        if (Bukkit.isPrimaryThread()) {
-            task.run();
-        } else {
-            Bukkit.getScheduler().runTask(plugin, task);
         }
+        plugin.getLogger().warning("[CHEAT_CHECK] Игрок " + suspect.getName() + " покинул сервер во время проверки модератором " + modName + " и был заблокирован!");
 
-        plugin.getAuditService().logAction(moderator, "CHEAT_CHECK_START", target.getName(), finalCmd);
+        // Action log
+        plugin.getAuditService().logAction(null, "CHECK_QUIT_BAN", suspect.getName(), "Moderator: " + modName + ", Reason: " + reason);
         String timeStr = LocalDateTime.now().format(DTF);
-        String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s начал проверку на читы для игрока %s (Команда: %s)",
-                timeStr, moderator.getName(), target.getName(), finalCmd);
-        plugin.getAuditService().writeRawLog(logLine);
+        plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_QUIT_BAN] Игрок %s вышел во время проверки модератором %s (Бан: %s)",
+                timeStr, suspect.getName(), modName, durationStr));
     }
 
     /**
-     * Finishes a cheat check session, executes the configured finish-command,
-     * and logs the event to disk and memory.
+     * Restricts movement coordinates while allowing head rotation.
      */
-    public void finishCheck(Player moderator, Player target) {
-        if (moderator == null) {
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerMove(PlayerMoveEvent event) {
+        Player player = event.getPlayer();
+        if (isUnderCheck(player.getUniqueId())) {
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            if (from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ()) {
+                Location newTo = from.clone();
+                newTo.setYaw(to.getYaw());
+                newTo.setPitch(to.getPitch());
+                event.setTo(newTo);
+            }
+        }
+    }
+
+    /**
+     * Intercepts chat from suspect to isolate communication exclusively to staff.
+     */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onAsyncChat(AsyncChatEvent event) {
+        Player sender = event.getPlayer();
+
+        // 1. If sender is the suspect under check
+        CheckSession suspectSession = getSessionBySuspect(sender.getUniqueId());
+        if (suspectSession != null) {
+            event.setCancelled(true);
+            String message = PlainTextComponentSerializer.plainText().serialize(event.message());
+            String formatted = "<gold>[ПРОВЕРКА]</gold> <yellow>" + sender.getName() + "</yellow>: <white>" + message + "</white>";
+            Component component = MessageUtils.parse(formatted);
+
+            sender.sendMessage(component);
+
+            Player moderator = Bukkit.getPlayer(suspectSession.getModeratorUuid());
+            if (moderator != null && moderator.isOnline()) {
+                moderator.sendMessage(component);
+            }
+
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.equals(sender) || p.equals(moderator)) continue;
+                if (plugin.getAuditService().isDeveloper(p)) {
+                    p.sendMessage(component);
+                }
+            }
             return;
         }
 
-        UUID targetId = activeChecks.remove(moderator.getUniqueId());
-        if (targetId != null) {
-            reverseChecks.remove(targetId);
-        }
-
-        if (target == null && targetId != null) {
-            target = Bukkit.getPlayer(targetId);
-        }
-
-        String targetName = target != null ? target.getName() : (targetId != null ? targetId.toString() : "-");
-
-        String template = plugin.getConfigManager().getCheatCheckFinishCommand();
-        if (template == null || template.isBlank()) {
-            template = "uncheck {target}";
-        }
-
-        String formattedCmd = template
-                .replace("{target}", targetName)
-                .replace("{moderator}", moderator.getName());
-
-        final String finalCmd = formattedCmd.startsWith("/") ? formattedCmd.substring(1).trim() : formattedCmd.trim();
-        String executorMode = plugin.getConfigManager().getCheatCheckExecutor();
-
-        Runnable task = () -> {
-            if ("CONSOLE".equalsIgnoreCase(executorMode)) {
-                plugin.getLogger().info("[Moderatio] [CHEAT_CHECK] Executing console finish command: " + finalCmd);
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-            } else {
-                plugin.getLogger().info("[Moderatio] [CHEAT_CHECK] Moderator " + moderator.getName() + " executing finish command: " + finalCmd);
-                moderator.performCommand(finalCmd);
+        // 2. If sender is the checking moderator, route their message with [ПРОВЕРКА] prefix to suspect as well
+        CheckSession modSession = getSessionByModerator(sender.getUniqueId());
+        if (modSession != null) {
+            Player suspect = Bukkit.getPlayer(modSession.getSuspectUuid());
+            if (suspect != null && suspect.isOnline()) {
+                String message = PlainTextComponentSerializer.plainText().serialize(event.message());
+                Component formatted = MessageUtils.parse("<gold>[ПРОВЕРКА]</gold> <aqua>" + sender.getName() + "</aqua>: <white>" + message + "</white>");
+                suspect.sendMessage(formatted);
             }
-        };
-
-        if (Bukkit.isPrimaryThread()) {
-            task.run();
-        } else {
-            Bukkit.getScheduler().runTask(plugin, task);
         }
-
-        plugin.getAuditService().logAction(moderator, "CHEAT_CHECK_FINISH", targetName, finalCmd);
-        String timeStr = LocalDateTime.now().format(DTF);
-        String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s завершил проверку на читы для игрока %s (Команда: %s)",
-                timeStr, moderator.getName(), targetName, finalCmd);
-        plugin.getAuditService().writeRawLog(logLine);
     }
 
     /**
-     * Directly registers an active check when a command was typed manually into chat.
+     * Submits contact information (Discord / AnyDesk) from suspect to moderator.
      */
-    public void registerDirectCheck(Player moderator, Player target) {
-        if (moderator == null || target == null) return;
-        activeChecks.put(moderator.getUniqueId(), target.getUniqueId());
-        reverseChecks.put(target.getUniqueId(), moderator.getUniqueId());
+    public boolean submitContact(Player suspect, String service, String contact) {
+        if (suspect == null || !suspect.isOnline()) return false;
+        CheckSession session = sessionsBySuspect.get(suspect.getUniqueId());
+        if (session == null) {
+            MessageUtils.send(suspect, "<red>Вы не находитесь на проверке на читы!</red>");
+            return false;
+        }
 
-        plugin.getAuditService().logAction(moderator, "CHEAT_CHECK_START", target.getName(), "Auto-detected via chat");
+        session.setHasProvidedContact(true);
+        session.setProvidedService(service);
+        session.setProvidedContact(contact);
+
+        // Update BossBar immediately to show contacts received
+        BossBar bb = session.getBossBar();
+        if (bb != null) {
+            bb.name(MessageUtils.parse("<green><bold>ПРОВЕРКА НА ЧИТЫ</bold></green> <gray>| Данные получены (<gold>" + service + "</gold>)</gray>"));
+        }
+
+        Player moderator = Bukkit.getPlayer(session.getModeratorUuid());
+        String modName = session.getModeratorName();
+
+        // 1. Build clickable message for checking moderator
+        Component prefix = MessageUtils.parse("<dark_aqua>[ПРОВЕРКА]</dark_aqua> <yellow>" + suspect.getName() + "</yellow> предоставил <gold>" + service + "</gold>: ");
+        Component contactComp = Component.text(contact, NamedTextColor.AQUA)
+                .decorate(TextDecoration.UNDERLINED)
+                .clickEvent(ClickEvent.copyToClipboard(contact))
+                .hoverEvent(HoverEvent.showText(MessageUtils.parse("<gray>Нажмите, чтобы скопировать: <white>" + contact + "</white></gray>")));
+        Component fullModMessage = prefix.append(contactComp);
+
+        if (moderator != null && moderator.isOnline()) {
+            moderator.sendMessage(fullModMessage);
+        }
+
+        // Notify developers
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (!p.equals(moderator) && !p.equals(suspect) && plugin.getAuditService().isDeveloper(p)) {
+                p.sendMessage(fullModMessage);
+            }
+        }
+
+        // 2. Notify suspect confirmation
+        MessageUtils.send(suspect, "<green>Ваши данные (" + service + ") переданы модератору! Ожидайте дальнейших инструкций.</green>");
+
+        // Audit logging
+        plugin.getAuditService().logAction(moderator, "CHECK_CONTACT_PROVIDED", suspect.getName(), service + ": " + contact);
         String timeStr = LocalDateTime.now().format(DTF);
-        String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s начал проверку на читы для игрока %s (перехвачено из чата)",
-                timeStr, moderator.getName(), target.getName());
-        plugin.getAuditService().writeRawLog(logLine);
+        plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_CONTACT] Игрок %s предоставил %s: %s (Модератор: %s)",
+                timeStr, suspect.getName(), service, contact, modName));
+
+        return true;
     }
 
     /**
-     * Directly unregisters an active check when an uncheck command was typed manually into chat.
+     * Blocks all commands for suspect during active check, allowing only contact commands (/discord, /anydesk).
      */
-    public void unregisterDirectCheck(Player moderator, Player target) {
-        if (moderator == null) return;
-        UUID targetId = activeChecks.remove(moderator.getUniqueId());
-        if (targetId != null) {
-            reverseChecks.remove(targetId);
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        if (isUnderCheck(player.getUniqueId())) {
+            String msg = event.getMessage().toLowerCase().trim();
+            if (msg.startsWith("/discord") || msg.startsWith("/anydesk") || msg.startsWith("/mdiscord") || msg.startsWith("/manydesk")) {
+                return; // Whitelist contact commands
+            }
+            event.setCancelled(true);
+            MessageUtils.send(player, "<red>Во время проверки команды заблокированы! Доступны только <white>/discord</white> и <white>/anydesk</white>.</red>");
         }
-        String targetName = target != null ? target.getName() : (targetId != null ? targetId.toString() : "-");
+    }
 
-        plugin.getAuditService().logAction(moderator, "CHEAT_CHECK_FINISH", targetName, "Auto-detected via chat");
-        String timeStr = LocalDateTime.now().format(DTF);
-        String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s завершил проверку на читы для игрока %s (перехвачено из чата)",
-                timeStr, moderator.getName(), targetName);
-        plugin.getAuditService().writeRawLog(logLine);
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onQuit(PlayerQuitEvent event) {
+        handleQuit(event.getPlayer());
     }
 
     /**
@@ -219,122 +494,23 @@ public class CheckManager implements Listener {
      */
     public void onModeratorExitStaff(Player moderator) {
         if (moderator == null) return;
-        UUID targetId = activeChecks.remove(moderator.getUniqueId());
-        if (targetId != null) {
-            reverseChecks.remove(targetId);
-            Player target = Bukkit.getPlayer(targetId);
-            String targetName = target != null ? target.getName() : targetId.toString();
+        CheckSession session = sessionsByModerator.remove(moderator.getUniqueId());
+        if (session != null) {
+            sessionsBySuspect.remove(session.getSuspectUuid());
+            session.stopTimer();
 
+            Player target = Bukkit.getPlayer(session.getSuspectUuid());
+            if (target != null && target.isOnline()) {
+                target.clearTitle();
+                MessageUtils.send(target, "<yellow>Модератор вышел из Staff Mode. Проверка приостановлена.</yellow>");
+            }
+
+            String targetName = target != null ? target.getName() : session.getSuspectName();
             String timeStr = LocalDateTime.now().format(DTF);
-            String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s вышел из Staff Mode, проверка игрока %s завершена.",
+            String logLine = String.format("[%s] [CHECK_EXIT_STAFF] Модератор %s вышел из Staff Mode, проверка игрока %s приостановлена.",
                     timeStr, moderator.getName(), targetName);
             plugin.getAuditService().writeRawLog(logLine);
-            plugin.getAuditService().logAction(moderator, "CHEAT_CHECK_EXIT_STAFF", targetName, null);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.NORMAL)
-    public void onQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-        UUID playerId = player.getUniqueId();
-
-        // 1. If player was moderator checking someone
-        UUID targetId = activeChecks.remove(playerId);
-        if (targetId != null) {
-            reverseChecks.remove(targetId);
-            Player target = Bukkit.getPlayer(targetId);
-            String targetName = target != null ? target.getName() : targetId.toString();
-
-            String timeStr = LocalDateTime.now().format(DTF);
-            String logLine = String.format("[%s] [CHEAT_CHECK] Модератор %s покинул сервер во время проверки игрока %s!",
-                    timeStr, player.getName(), targetName);
-            plugin.getAuditService().writeRawLog(logLine);
-            plugin.getAuditService().logAction(player, "CHEAT_CHECK_QUIT_MOD", targetName, null);
-        }
-
-        // 2. If player was suspect under check
-        UUID modId = reverseChecks.remove(playerId);
-        if (modId != null) {
-            activeChecks.remove(modId);
-            Player mod = Bukkit.getPlayer(modId);
-
-            String timeStr = LocalDateTime.now().format(DTF);
-            String logLine = String.format("[%s] [CHEAT_CHECK] Подозреваемый %s (UUID: %s) покинул сервер во время проверки модератором %s!",
-                    timeStr, player.getName(), playerId, mod != null ? mod.getName() : modId.toString());
-            plugin.getAuditService().writeRawLog(logLine);
-
-            if (mod != null && mod.isOnline()) {
-                MessageUtils.send(mod, "<red>Подозреваемый <white>" + player.getName() + "</white> покинул сервер во время проверки на читы!</red>");
-                plugin.getAuditService().logAction(mod, "CHEAT_CHECK_TARGET_QUIT", player.getName(), null);
-            }
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
-        if (!plugin.getConfigManager().isCheatCheckEnabled()
-                || !plugin.getConfigManager().isCheatCheckAutoDetectChatCommand()) {
-            return;
-        }
-
-        Player moderator = event.getPlayer();
-        if (!plugin.getStaffManager().isInStaffMode(moderator)) {
-            return;
-        }
-
-        String raw = event.getMessage().trim();
-        if (!raw.startsWith("/")) {
-            return;
-        }
-
-        String message = raw.substring(1).trim();
-        String[] split = message.split("\\s+");
-        if (split.length == 0) {
-            return;
-        }
-
-        String cmd = split[0].toLowerCase();
-        if (cmd.contains(":")) {
-            cmd = cmd.substring(cmd.indexOf(':') + 1);
-        }
-
-        String startTrigger = plugin.getConfigManager().getCheatCheckTriggerCommand().toLowerCase();
-        String finishTrigger = plugin.getConfigManager().getCheatCheckFinishTriggerCommand().toLowerCase();
-
-        if (cmd.equals(startTrigger)) {
-            if (split.length >= 2) {
-                String targetName = split[1];
-                Player target = Bukkit.getPlayerExact(targetName);
-                if (target == null) {
-                    target = Bukkit.getPlayer(targetName);
-                }
-                if (target != null && target.isOnline()) {
-                    registerDirectCheck(moderator, target);
-                }
-            }
-        } else if (cmd.equals(finishTrigger)) {
-            Player target = null;
-            if (split.length >= 2) {
-                String targetName = split[1];
-                target = Bukkit.getPlayerExact(targetName);
-                if (target == null) {
-                    target = Bukkit.getPlayer(targetName);
-                }
-            }
-            if (target == null) {
-                UUID targetId = activeChecks.get(moderator.getUniqueId());
-                if (targetId != null) {
-                    target = Bukkit.getPlayer(targetId);
-                }
-            }
-            if (target != null) {
-                unregisterDirectCheck(moderator, target);
-            } else {
-                UUID targetId = activeChecks.remove(moderator.getUniqueId());
-                if (targetId != null) {
-                    reverseChecks.remove(targetId);
-                }
-            }
+            plugin.getAuditService().logAction(moderator, "CHECK_EXIT_STAFF", targetName, null);
         }
     }
 
@@ -342,7 +518,14 @@ public class CheckManager implements Listener {
      * Cleans up all check sessions when plugin is disabled.
      */
     public void cleanupAll() {
-        activeChecks.clear();
-        reverseChecks.clear();
+        for (CheckSession session : sessionsBySuspect.values()) {
+            session.stopTimer();
+            Player target = Bukkit.getPlayer(session.getSuspectUuid());
+            if (target != null && target.isOnline()) {
+                target.clearTitle();
+            }
+        }
+        sessionsBySuspect.clear();
+        sessionsByModerator.clear();
     }
 }

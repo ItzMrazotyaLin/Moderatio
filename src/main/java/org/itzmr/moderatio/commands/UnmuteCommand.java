@@ -66,7 +66,10 @@ public class UnmuteCommand implements CommandExecutor, TabCompleter {
 
         plugin.getPunishmentManager().unmute(targetUuid, staffUuid, staffName);
 
-        String template = plugin.getConfigManager().getMessage("punishments.unmuted-success", false);
+        String template = plugin.getConfigManager().getMessage("punishments.unmute-staff", false);
+        if (template.contains("Missing message")) {
+            template = plugin.getConfigManager().getMessage("punishments.unmuted-success", false);
+        }
         if (template.contains("Missing message")) {
             template = plugin.getConfigManager().getMessage("punishment.unmuted-success", false);
         }

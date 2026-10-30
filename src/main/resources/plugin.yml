@@ -37,6 +37,20 @@ commands:
     description: Снять последнее предупреждение с игрока
     permission: moderatio.punish.unwarn
     aliases: [munwarn]
+  check:
+    description: Начать проверку игрока на читы
+    permission: moderatio.staff
+    aliases: [mcheck]
+  uncheck:
+    description: Завершить проверку игрока на читы
+    permission: moderatio.staff
+    aliases: [muncheck]
+  discord:
+    description: Отправить свой Discord проверяющему модератору
+    aliases: [mdiscord]
+  anydesk:
+    description: Отправить свой AnyDesk проверяющему модератору
+    aliases: [manydesk]
 
 permissions:
   moderatio.staff:

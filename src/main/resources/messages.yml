@@ -100,6 +100,8 @@ punishments:
   warn-received: "<gold>Вам выдано предупреждение!</gold> <gray>Причина: <white>{reason}</white> (Предупреждений: <yellow>{count}/{max}</yellow>)</gray>"
   unbanned-success: "<green>Игрок <white>{target}</white> успешно разблокирован!</green>"
   unmuted-success: "<green>Игрок <white>{target}</white> успешно размучен!</green>"
+  unmute-staff: "<green>Игрок <white>{target}</white> успешно размучен!</green>"
+  unmute-target: "<green>Вы были размучены! Соблюдайте правила сервера.</green>"
 
 punishment:
   banned-success: "<green>Игрок <white>{target}</white> успешно заблокирован на <yellow>{duration}</yellow>! Причина: <red>{reason}</red>"

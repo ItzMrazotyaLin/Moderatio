@@ -11,10 +11,14 @@ import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.util.Vector;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.audit.StaffActionEntry;
@@ -267,7 +271,11 @@ public class ModerationDialogService {
         Map<String, String> placeholders = createPlayerPlaceholders(target);
 
         Component title = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.main-title", placeholders, false));
-        Component body = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.main-body", placeholders, false));
+        String rawBody = plugin.getConfigManager().getMessage("dialog.main-body", placeholders, false);
+        if (plugin.getCheckManager().isUnderCheck(target.getUniqueId()) && !rawBody.contains("НА ПРОВЕРКЕ")) {
+            rawBody = "<red><bold>СТАТУС: НА ПРОВЕРКЕ</bold></red>\n\n" + rawBody;
+        }
+        Component body = MessageUtils.parse(rawBody);
 
         int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
 
@@ -609,7 +617,7 @@ public class ModerationDialogService {
     }
 
     /**
-     * Opens the warn template selection dialog.
+     * Opens the categorized warn selection chest GUI (Zone CHAT, Zone GAME, GRAY_STAINED_GLASS_PANE divider).
      */
     public void openWarnTemplatesDialog(Player moderator, Player target) {
         if (!target.isOnline()) {
@@ -617,69 +625,163 @@ public class ModerationDialogService {
             return;
         }
 
-        Map<String, String> placeholders = createPlayerPlaceholders(target);
+        WarnMenuHolder holder = new WarnMenuHolder(target);
+        Inventory inv = Bukkit.createInventory(holder, 54, MessageUtils.parse("<dark_gray>Выбор варна: <gold>" + target.getName() + "</gold></dark_gray>"));
+        holder.setInventory(inv);
 
-        Component title = MessageUtils.parse("<gold>Выбор причины варна: " + target.getName() + "</gold>");
-        Component body = MessageUtils.parse("<gray>Выберите шаблон предупреждения или укажите свою причину:</gray>");
+        ItemStack glass = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray> </dark_gray>"), null);
+        ItemStack divider = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray>▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬</dark_gray>"), null);
 
-        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
-        List<ActionButton> actions = new ArrayList<>();
-
-        ConfigurationSection section = plugin.getConfig().getConfigurationSection("warn-templates");
-        if (section != null) {
-            for (String key : section.getKeys(false)) {
-                String btnTitle = section.getString(key + ".title", key);
-                String reason = section.getString(key + ".reason", "Нарушение правил");
-                String cat = section.getString(key + ".category", "CHAT");
-
-                Component label = MessageUtils.parse(btnTitle);
-                actions.add(ActionButton.builder(label)
-                        .width(buttonWidth)
-                        .action(DialogAction.customClick((resp, aud) -> {
-                            if (aud instanceof Player p) {
-                                executeWarn(p, target, cat, reason);
-                            }
-                        }, CALLBACK_OPTIONS))
-                        .build());
-            }
+        // Fill background
+        for (int i = 0; i < 54; i++) {
+            inv.setItem(i, glass);
         }
 
-        // Custom reason button
-        Component customLabel = MessageUtils.parse("<gold>✍ Своя причина варна</gold>");
-        actions.add(ActionButton.builder(customLabel)
-                .width(buttonWidth)
-                .action(DialogAction.customClick((resp, aud) -> {
-                    if (aud instanceof Player p) {
-                        openCustomWarnDialog(p, target);
-                    }
-                }, CALLBACK_OPTIONS))
-                .build());
+        // Zone CHAT Header (Slot 4)
+        inv.setItem(4, createGuiItem(Material.WRITABLE_BOOK,
+                MessageUtils.parse("<yellow><bold>ЗОНА CHAT: Предупреждения общения</bold></yellow>"),
+                List.of(MessageUtils.parse("<gray>Нарушения правил общения в чате</gray>"))));
 
-        // Back button
-        Component backLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-back", false));
-        ActionButton exitAction = ActionButton.builder(backLabel)
-                .width(buttonWidth)
-                .action(DialogAction.customClick((resp, aud) -> {
-                    if (aud instanceof Player p) {
-                        openMainDialog(p, target);
-                    }
-                }, CALLBACK_OPTIONS))
-                .build();
+        // Zone CHAT Templates
+        // Slot 10: "Спам / Флуд" (WRITABLE_BOOK)
+        inv.setItem(10, createGuiItem(Material.WRITABLE_BOOK,
+                MessageUtils.parse("<yellow><bold>Спам / Флуд</bold></yellow>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Спам и флуд в чате</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(10, "CHAT", "Спам и флуд в чате");
 
-        Dialog dialog = Dialog.create(factory -> factory.empty()
-                .base(DialogBase.builder(title)
-                        .canCloseWithEscape(true)
-                        .body(List.of(DialogBody.plainMessage(body)))
-                        .build())
-                .type(DialogType.multiAction(actions, exitAction, 1)));
+        // Slot 12: "Оскорбления" (PAPER)
+        inv.setItem(12, createGuiItem(Material.PAPER,
+                MessageUtils.parse("<red><bold>Оскорбления</bold></red>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Оскорбление игроков и токсичное поведение</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(12, "CHAT", "Оскорбление игроков и токсичное поведение");
 
-        moderator.showDialog(dialog);
+        // Slot 14: "Капс" (WRITABLE_BOOK)
+        inv.setItem(14, createGuiItem(Material.WRITABLE_BOOK,
+                MessageUtils.parse("<gold><bold>Капс</bold></gold>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Злоупотребление верхним регистром (капс)</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(14, "CHAT", "Злоупотребление верхним регистром (капс)");
+
+        // Slot 16: "Ненормативная лексика" (PAPER)
+        inv.setItem(16, createGuiItem(Material.PAPER,
+                MessageUtils.parse("<yellow><bold>Ненормативная лексика</bold></yellow>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Ненормативная лексика и мат</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(16, "CHAT", "Ненормативная лексика и мат");
+
+        // Row 2 (slots 18-26): Divider
+        for (int i = 18; i <= 26; i++) {
+            inv.setItem(i, divider);
+        }
+
+        // Zone GAME Header (Slot 22 inside divider)
+        inv.setItem(22, createGuiItem(Material.SHIELD,
+                MessageUtils.parse("<red><bold>ЗОНА GAME: Предупреждения игры</bold></red>"),
+                List.of(MessageUtils.parse("<gray>Нарушения игрового процесса и взаимодействия</gray>"))));
+
+        // Zone GAME Templates
+        // Slot 29: "Помеха игре" (IRON_SWORD)
+        inv.setItem(29, createGuiItem(Material.IRON_SWORD,
+                MessageUtils.parse("<red><bold>Помеха игре</bold></red>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Создание помех игровому процессу</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(29, "GAME", "Создание помех игровому процессу");
+
+        // Slot 31: "Тимкилл / Грифинг" (SHIELD)
+        inv.setItem(31, createGuiItem(Material.SHIELD,
+                MessageUtils.parse("<dark_red><bold>Тимкилл / Грифинг</bold></dark_red>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Тимкилл, вредительство или грифинг</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(31, "GAME", "Тимкилл, вредительство или грифинг");
+
+        // Slot 33: "Багоюз" (IRON_SWORD)
+        inv.setItem(33, createGuiItem(Material.IRON_SWORD,
+                MessageUtils.parse("<gold><bold>Багоюз</bold></gold>"),
+                List.of(
+                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
+                        MessageUtils.parse("<dark_gray>Причина: Использование багов и недоработок сервера</dark_gray>"),
+                        Component.empty(),
+                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
+                )));
+        holder.setAction(33, "GAME", "Использование багов и недоработок сервера");
+
+        // Row 4 (slots 36-44): Divider
+        for (int i = 36; i <= 44; i++) {
+            inv.setItem(i, divider);
+        }
+
+        // Control buttons (Row 5)
+        // Slot 45: Back
+        inv.setItem(45, createGuiItem(Material.ARROW,
+                MessageUtils.parse("<white><bold>⬅ Назад</bold></white>"),
+                List.of(MessageUtils.parse("<gray>Вернуться в главное меню модерации</gray>"))));
+
+        // Slot 49: Custom reason - ONLY visible and active for developers!
+        if (plugin.getAuditService().isDeveloper(moderator)) {
+            inv.setItem(49, createGuiItem(Material.ANVIL,
+                    MessageUtils.parse("<gold><bold>✍ Своя причина варна</bold></gold>"),
+                    List.of(
+                            MessageUtils.parse("<gray>Ввести произвольную причину варна</gray>"),
+                            MessageUtils.parse("<aqua>[Только для разработчиков]</aqua>")
+                    )));
+        }
+
+        // Slot 53: Close
+        inv.setItem(53, createGuiItem(Material.BARRIER,
+                MessageUtils.parse("<red><bold>✖ Закрыть</bold></red>"),
+                List.of(MessageUtils.parse("<gray>Закрыть меню варнов</gray>"))));
+
+        moderator.openInventory(inv);
+    }
+
+    private ItemStack createGuiItem(Material material, Component name, List<Component> lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(name);
+            if (lore != null && !lore.isEmpty()) {
+                meta.lore(lore);
+            }
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     /**
      * Opens modal dialog with input field for custom warn reason.
      */
     public void openCustomWarnDialog(Player moderator, Player target) {
+        if (!plugin.getAuditService().isDeveloper(moderator)) {
+            MessageUtils.send(moderator, "<red>Ввод кастомной причины варна доступен исключительно разработчикам!</red>");
+            return;
+        }
+
         if (!target.isOnline()) {
             MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
             return;
@@ -1057,12 +1159,15 @@ public class ModerationDialogService {
      */
     private Map<String, String> createPlayerPlaceholders(Player player) {
         Map<String, String> map = new HashMap<>();
+        boolean underCheck = plugin.getCheckManager().isUnderCheck(player.getUniqueId());
         map.put("target", player.getName());
         map.put("ping", String.valueOf(player.getPing()));
         map.put("health", String.valueOf((int) Math.ceil(player.getHealth())));
         map.put("max_health", String.valueOf((int) Math.ceil(player.getMaxHealth())));
         map.put("gamemode", player.getGameMode().name());
         map.put("world", player.getWorld().getName());
+        map.put("check_status", underCheck ? "<red><bold>СТАТУС: НА ПРОВЕРКЕ</bold></red>\n" : "");
+        map.put("status", underCheck ? "<red><bold>НА ПРОВЕРКЕ</bold></red>" : "<green>Обычный</green>");
         return map;
     }
 

@@ -227,57 +227,92 @@ public class ConfigManager {
      * Checks if cheat check integration is enabled.
      */
     public boolean isCheatCheckEnabled() {
+        if (config.contains("check-system.enabled")) {
+            return config.getBoolean("check-system.enabled", true);
+        }
         return config.getBoolean("cheat-check.enabled", true);
     }
 
     /**
-     * Gets executor mode for cheat check command ('MODERATOR' or 'CONSOLE').
+     * Gets cheat check timer in seconds (default 180).
      */
-    public String getCheatCheckExecutor() {
-        return config.getString("cheat-check.executor", "MODERATOR");
+    public int getCheatCheckTimerSeconds() {
+        if (config.contains("check-system.timer-seconds")) {
+            return config.getInt("check-system.timer-seconds", 180);
+        }
+        return config.getInt("cheat-check.timer-seconds", 180);
     }
 
     /**
-     * Gets cheat check command template (fallback).
+     * Checks if auto-ban on quit during check is enabled.
      */
-    public String getCheatCheckCommand() {
-        return getCheatCheckStartCommand();
+    public boolean isCheatCheckAutoBanOnQuit() {
+        if (config.contains("check-system.auto-ban-on-quit.enabled")) {
+            return config.getBoolean("check-system.auto-ban-on-quit.enabled", true);
+        }
+        return config.getBoolean("cheat-check.auto-ban-on-quit.enabled", true);
     }
 
     /**
-     * Gets start command template for cheat check.
+     * Gets auto-ban on quit duration string (default 30d).
      */
-    public String getCheatCheckStartCommand() {
-        return config.getString("cheat-check.start-command",
-                config.getString("cheat-check.command", "check {target}"));
+    public String getCheatCheckAutoBanDuration() {
+        if (config.contains("check-system.auto-ban-on-quit.duration")) {
+            return config.getString("check-system.auto-ban-on-quit.duration", "30d");
+        }
+        return config.getString("cheat-check.auto-ban-on-quit.duration", "30d");
     }
 
     /**
-     * Gets finish command template for cheat check.
+     * Gets auto-ban on quit reason.
      */
-    public String getCheatCheckFinishCommand() {
-        return config.getString("cheat-check.finish-command", "uncheck {target}");
+    public String getCheatCheckAutoBanReason() {
+        if (config.contains("check-system.auto-ban-on-quit.reason")) {
+            return config.getString("check-system.auto-ban-on-quit.reason", "Уход от проверки на читы");
+        }
+        return config.getString("cheat-check.auto-ban-on-quit.reason", "Уход от проверки на читы");
     }
 
     /**
-     * Checks if auto detection of chat check commands is enabled.
+     * Checks if timeout auto-ban is enabled when remaining time hits 0.
      */
-    public boolean isCheatCheckAutoDetectChatCommand() {
-        return config.getBoolean("cheat-check.auto-detect-chat-command", true);
+    public boolean isCheatCheckTimeoutBan() {
+        if (config.contains("check-system.timeout-ban.enabled")) {
+            return config.getBoolean("check-system.timeout-ban.enabled", true);
+        }
+        return config.getBoolean("cheat-check.timeout-ban.enabled", true);
     }
 
     /**
-     * Gets the trigger command for starting a check from chat (without leading slash).
+     * Gets timeout ban duration string (default 30d).
      */
-    public String getCheatCheckTriggerCommand() {
-        return config.getString("cheat-check.trigger-command", "check");
+    public String getCheatCheckTimeoutBanDuration() {
+        if (config.contains("check-system.timeout-ban.duration")) {
+            return config.getString("check-system.timeout-ban.duration", "30d");
+        }
+        return config.getString("cheat-check.timeout-ban.duration", "30d");
     }
 
     /**
-     * Gets the trigger command for finishing a check from chat (without leading slash).
+     * Gets timeout ban reason.
      */
-    public String getCheatCheckFinishTriggerCommand() {
-        return config.getString("cheat-check.finish-trigger-command", "uncheck");
+    public String getCheatCheckTimeoutBanReason() {
+        if (config.contains("check-system.timeout-ban.reason")) {
+            return config.getString("check-system.timeout-ban.reason", "Отказ от проверки на читы (Время истекло)");
+        }
+        return config.getString("cheat-check.timeout-ban.reason", "Отказ от проверки на читы (Время истекло)");
+    }
+
+    /**
+     * Gets discord/anydesk contact request text.
+     */
+    public String getCheatCheckDiscordContactText() {
+        if (config.contains("check-system.discord-contact-text")) {
+            return config.getString("check-system.discord-contact-text",
+                    "<yellow>Отправьте ваш Discord / AnyDesk модератору через <white>/discord</white> или <white>/anydesk</white>!</yellow>");
+        }
+        return config.getString("cheat-check.discord-contact-text",
+                "<yellow>Отправьте ваш Discord / AnyDesk модератору в чат!</yellow>");
     }
 
     /**

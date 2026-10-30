@@ -312,9 +312,9 @@ public class PunishmentManager {
 
                     Player online = Bukkit.getPlayer(targetUuid);
                     if (online != null && online.isOnline()) {
-                        String msg = plugin.getConfigManager().getMessage("punishments.unmuted-success", false);
+                        String msg = plugin.getConfigManager().getMessage("punishments.unmute-target", false);
                         if (msg.contains("Missing message")) {
-                            msg = "<green>С вас снято ограничение чата!</green>";
+                            msg = "<green>Вы были размучены! Соблюдайте правила сервера.</green>";
                         }
                         MessageUtils.send(online, msg);
                     }

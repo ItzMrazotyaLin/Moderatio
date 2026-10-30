@@ -36,21 +36,23 @@ vanish:
   mode: "INTERNAL"
   external-command: "vanish {moderator}"
 
-# Интеграция с внешними плагинами проверки на читы
-cheat-check:
+# Встроенная система проверок на читы
+check-system:
   enabled: true
-  # Режим исполнения команды: MODERATOR (от лица модератора) или CONSOLE (от консоли)
-  executor: "MODERATOR"
-  # Команда начала проверки
-  start-command: "check {target}"
-  # Команда завершения/снятия с проверки
-  finish-command: "uncheck {target}"
-  # Автоматически переводить меню и модератора в режим проверки при вводе команды вручную в чат
-  auto-detect-chat-command: false
-  # Префикс команды для отслеживания в чате (без слеша)
-  trigger-command: "check"
-  # Префикс команды для отслеживания снятия с проверки в чате (без слеша)
-  finish-trigger-command: "uncheck"
+  # Время на проверку в секундах (по умолчанию 180 сек / 3 мин)
+  timer-seconds: 180
+  # Наказание при выходе во время проверки (QUIT_BAN)
+  auto-ban-on-quit:
+    enabled: true
+    duration: "30d" # Срок бана
+    reason: "Уход от проверки на читы"
+  # Автобан по истечению времени проверки
+  timeout-ban:
+    enabled: true
+    duration: "30d"
+    reason: "Отказ от проверки на читы (Время истекло)"
+  # Требование контактов
+  discord-contact-text: "<yellow>Отправьте ваш Discord / AnyDesk модератору через <white>/discord</white> или <white>/anydesk</white>!</yellow>"
 
 # Система предупреждений (варнов) и автоматических санкций
 warns:
@@ -112,18 +114,41 @@ mute-templates:
 
 # Готовые шаблоны варнов (предупреждений)
 warn-templates:
-  chat:
-    title: "<yellow>Нарушение правил чата (CHAT)"
+  chat_spam:
+    title: "<yellow>Спам / Флуд</yellow>"
+    icon: "WRITABLE_BOOK"
     category: "CHAT"
-    reason: "Нарушение правил общения в чате"
-  trolling:
-    title: "<gold>Помеха игрокам (GAME)"
+    reason: "Спам и флуд в чате"
+  chat_insult:
+    title: "<red>Оскорбления</red>"
+    icon: "PAPER"
+    category: "CHAT"
+    reason: "Оскорбление игроков и токсичное поведение"
+  chat_caps:
+    title: "<gold>Капс</gold>"
+    icon: "WRITABLE_BOOK"
+    category: "CHAT"
+    reason: "Злоупотребление верхним регистром (капс)"
+  chat_curse:
+    title: "<yellow>Ненормативная лексика</yellow>"
+    icon: "PAPER"
+    category: "CHAT"
+    reason: "Ненормативная лексика и мат"
+  game_disturb:
+    title: "<red>Помеха игре</red>"
+    icon: "IRON_SWORD"
     category: "GAME"
-    reason: "Создание помех и токсичное поведение в игре"
-  suspicious:
-    title: "<red>Подозрительное поведение (GAME)"
+    reason: "Создание помех игровому процессу"
+  game_teamkill:
+    title: "<dark_red>Тимкилл / Грифинг</dark_red>"
+    icon: "SHIELD"
     category: "GAME"
-    reason: "Подозрительное поведение / отказ от проверки"
+    reason: "Тимкилл, вредительство или грифинг"
+  game_bug:
+    title: "<gold>Багоюз</gold>"
+    icon: "IRON_SWORD"
+    category: "GAME"
+    reason: "Использование багов и недоработок сервера"
 
 # Настройки оформления диалогов Dialog API
 dialog:
