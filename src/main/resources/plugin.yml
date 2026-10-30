@@ -51,6 +51,9 @@ commands:
   anydesk:
     description: Отправить свой AnyDesk проверяющему модератору
     aliases: [manydesk]
+  rustdesk:
+    description: Отправить свой RustDesk проверяющему модератору
+    aliases: [mrustdesk]
 
 permissions:
   moderatio.staff:

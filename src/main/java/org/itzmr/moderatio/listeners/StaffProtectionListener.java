@@ -58,6 +58,11 @@ public class StaffProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageEvent event) {
         if (event.getEntity() instanceof Player player) {
+            if (plugin.getCheckManager().isUnderCheck(player.getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
+
             if (staffManager.isInStaffMode(player)) {
                 event.setCancelled(true);
                 return;
@@ -101,8 +106,14 @@ public class StaffProtectionListener implements Listener {
             return;
         }
 
-        if (event.getEntity() instanceof Player victim && staffManager.isInStaffMode(victim)) {
-            event.setCancelled(true);
+        if (event.getEntity() instanceof Player victim) {
+            if (plugin.getCheckManager().isUnderCheck(victim.getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
+            if (staffManager.isInStaffMode(victim)) {
+                event.setCancelled(true);
+            }
         }
     }
 

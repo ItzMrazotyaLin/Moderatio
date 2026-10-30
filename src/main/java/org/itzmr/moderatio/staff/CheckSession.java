@@ -2,6 +2,7 @@ package org.itzmr.moderatio.staff;
 
 import net.kyori.adventure.bossbar.BossBar;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -11,6 +12,11 @@ import java.util.UUID;
  * Model representing an active cheat check session.
  */
 public class CheckSession {
+
+    public enum CheckStatus {
+        WAITING_FOR_CONTACT,
+        IN_PROGRESS
+    }
 
     private final UUID moderatorUuid;
     private final String moderatorName;
@@ -24,6 +30,10 @@ public class CheckSession {
     private boolean hasProvidedContact;
     private String providedContact;
     private String providedService;
+    private boolean timerPaused;
+    private CheckStatus status = CheckStatus.WAITING_FOR_CONTACT;
+    private Location originalSuspectLocation;
+    private Location originalModeratorLocation;
 
     public CheckSession(UUID moderatorUuid, String moderatorName, UUID suspectUuid, String suspectName, int totalSeconds) {
         this.moderatorUuid = moderatorUuid;
@@ -113,6 +123,38 @@ public class CheckSession {
 
     public void setProvidedService(String providedService) {
         this.providedService = providedService;
+    }
+
+    public boolean isTimerPaused() {
+        return timerPaused;
+    }
+
+    public void setTimerPaused(boolean timerPaused) {
+        this.timerPaused = timerPaused;
+    }
+
+    public CheckStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(CheckStatus status) {
+        this.status = status;
+    }
+
+    public Location getOriginalSuspectLocation() {
+        return originalSuspectLocation;
+    }
+
+    public void setOriginalSuspectLocation(Location originalSuspectLocation) {
+        this.originalSuspectLocation = originalSuspectLocation;
+    }
+
+    public Location getOriginalModeratorLocation() {
+        return originalModeratorLocation;
+    }
+
+    public void setOriginalModeratorLocation(Location originalModeratorLocation) {
+        this.originalModeratorLocation = originalModeratorLocation;
     }
 
     public void stopTimer() {

@@ -52,7 +52,31 @@ check-system:
     duration: "30d"
     reason: "Отказ от проверки на читы (Время истекло)"
   # Требование контактов
-  discord-contact-text: "<yellow>Отправьте ваш Discord / AnyDesk модератору через <white>/discord</white> или <white>/anydesk</white>!</yellow>"
+  discord-contact-text: "<yellow>Отправьте ваши контакты проверяющему модератору!</yellow>"
+
+  # Точки телепортации на проверке (Spawn Rooms)
+  teleportation:
+    enabled: true
+    cheater-spawn: null # сохраняется: "world,x,y,z,yaw,pitch"
+    moderator-spawn: null
+    finish-spawn: null
+
+  # Конфигурируемые сервисы контактов
+  services:
+    discord:
+      name: "Discord"
+      command: "discord"
+    anydesk:
+      name: "AnyDesk"
+      command: "anydesk"
+    rustdesk:
+      name: "RustDesk"
+      command: "rustdesk"
+
+  # Эффекты слепоты и скрытия (Vanish & Blindness)
+  effects:
+    blindness: true # Накладывать слепоту на читера
+    hide-cheater: true # Скрывать читера от остальных игроков (ваниш без партиклов)
 
 # Система предупреждений (варнов) и автоматических санкций
 warns:

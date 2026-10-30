@@ -1,5 +1,6 @@
 package org.itzmr.moderatio.config;
 
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.itzmr.moderatio.Moderatio;
@@ -10,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -313,6 +315,80 @@ public class ConfigManager {
         }
         return config.getString("cheat-check.discord-contact-text",
                 "<yellow>Отправьте ваш Discord / AnyDesk модератору в чат!</yellow>");
+    }
+
+    /**
+     * Model representing a configured contact submission service.
+     */
+    public record ContactService(String id, String name, String command) {}
+
+    /**
+     * Checks if spawn room teleportation is enabled for cheat checks.
+     */
+    public boolean isCheatCheckTeleportationEnabled() {
+        return config.getBoolean("check-system.teleportation.enabled", true);
+    }
+
+    public String getCheatCheckCheaterSpawn() {
+        return config.getString("check-system.teleportation.cheater-spawn");
+    }
+
+    public void setCheatCheckCheaterSpawn(String serialized) {
+        config.set("check-system.teleportation.cheater-spawn", serialized);
+        plugin.saveConfig();
+    }
+
+    public String getCheatCheckModeratorSpawn() {
+        return config.getString("check-system.teleportation.moderator-spawn");
+    }
+
+    public void setCheatCheckModeratorSpawn(String serialized) {
+        config.set("check-system.teleportation.moderator-spawn", serialized);
+        plugin.saveConfig();
+    }
+
+    public String getCheatCheckFinishSpawn() {
+        return config.getString("check-system.teleportation.finish-spawn");
+    }
+
+    public void setCheatCheckFinishSpawn(String serialized) {
+        config.set("check-system.teleportation.finish-spawn", serialized);
+        plugin.saveConfig();
+    }
+
+    /**
+     * Gets all configured contact submission services.
+     */
+    public Map<String, ContactService> getCheatCheckServices() {
+        Map<String, ContactService> map = new LinkedHashMap<>();
+        ConfigurationSection sec = config.getConfigurationSection("check-system.services");
+        if (sec != null) {
+            for (String key : sec.getKeys(false)) {
+                String name = sec.getString(key + ".name", key);
+                String command = sec.getString(key + ".command", key).toLowerCase();
+                map.put(key, new ContactService(key, name, command));
+            }
+        }
+        if (map.isEmpty()) {
+            map.put("discord", new ContactService("discord", "Discord", "discord"));
+            map.put("anydesk", new ContactService("anydesk", "AnyDesk", "anydesk"));
+            map.put("rustdesk", new ContactService("rustdesk", "RustDesk", "rustdesk"));
+        }
+        return map;
+    }
+
+    /**
+     * Checks if blindness potion effect should be applied to cheater during check.
+     */
+    public boolean isCheatCheckBlindnessEnabled() {
+        return config.getBoolean("check-system.effects.blindness", true);
+    }
+
+    /**
+     * Checks if cheater should be hidden from normal players during check.
+     */
+    public boolean isCheatCheckHideCheaterEnabled() {
+        return config.getBoolean("check-system.effects.hide-cheater", true);
     }
 
     /**

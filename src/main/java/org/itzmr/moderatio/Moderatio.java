@@ -128,6 +128,7 @@ public final class Moderatio extends JavaPlugin {
         UncheckCommand uncheckCmd = new UncheckCommand(this);
         ContactCommand discordCmd = new ContactCommand(this, "Discord");
         ContactCommand anydeskCmd = new ContactCommand(this, "AnyDesk");
+        ContactCommand rustdeskCmd = new ContactCommand(this, "RustDesk");
 
         registerPluginCommand("staff", staffCmd, staffCmd, "Вход в режим модератора", "/staff", List.of("sm", "staffmode"));
         registerPluginCommand("moderatio", moderatioCmd, moderatioCmd, "Главная команда управления Moderatio", "/moderatio [reload]", List.of("mod"));
@@ -141,6 +142,7 @@ public final class Moderatio extends JavaPlugin {
         registerPluginCommand("uncheck", uncheckCmd, uncheckCmd, "Завершить проверку игрока на читы", "/uncheck <игрок> [passed/fail]", List.of("muncheck"));
         registerPluginCommand("discord", discordCmd, discordCmd, "Отправить Discord модератору", "/discord <контакт>", List.of("mdiscord"));
         registerPluginCommand("anydesk", anydeskCmd, anydeskCmd, "Отправить AnyDesk модератору", "/anydesk <код>", List.of("manydesk"));
+        registerPluginCommand("rustdesk", rustdeskCmd, rustdeskCmd, "Отправить RustDesk модератору", "/rustdesk <код>", List.of("mrustdesk"));
     }
 
     private void registerPluginCommand(String name, CommandExecutor executor, TabCompleter completer, String description, String usage, List<String> aliases) {

@@ -11,15 +11,22 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import org.itzmr.moderatio.Moderatio;
+import org.itzmr.moderatio.config.ConfigManager;
+import org.itzmr.moderatio.utils.LocationUtils;
 import org.itzmr.moderatio.utils.MessageUtils;
 import org.itzmr.moderatio.utils.TimeUtils;
 
@@ -131,14 +138,45 @@ public class CheckManager implements Listener {
                 totalSeconds
         );
 
+        // Record original locations before any teleportation
+        session.setOriginalSuspectLocation(suspect.getLocation().clone());
+        session.setOriginalModeratorLocation(moderator.getLocation().clone());
+
         sessionsBySuspect.put(suspect.getUniqueId(), session);
         sessionsByModerator.put(moderator.getUniqueId(), session);
 
-        // Notify suspect in chat
-        MessageUtils.send(suspect, "<red><bold>[ВНИМАНИЕ]</bold> Вы были вызваны на проверку на читы модератором <yellow>" + moderator.getName() + "</yellow>!</red>");
+        // 1. Teleportation to spawn rooms if enabled
+        if (plugin.getConfigManager().isCheatCheckTeleportationEnabled()) {
+            Location cheaterSpawn = LocationUtils.deserialize(plugin.getConfigManager().getCheatCheckCheaterSpawn());
+            if (cheaterSpawn != null && cheaterSpawn.getWorld() != null) {
+                suspect.teleport(cheaterSpawn);
+            }
+            Location moderSpawn = LocationUtils.deserialize(plugin.getConfigManager().getCheatCheckModeratorSpawn());
+            if (moderSpawn != null && moderSpawn.getWorld() != null) {
+                moderator.teleport(moderSpawn);
+            }
+        }
+
+        // 2. Effects: Blindness and Vanish (hide-cheater)
+        if (plugin.getConfigManager().isCheatCheckBlindnessEnabled()) {
+            suspect.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, PotionEffect.INFINITE_DURATION, 0, false, false, false));
+        }
+        if (plugin.getConfigManager().isCheatCheckHideCheaterEnabled()) {
+            for (Player other : Bukkit.getOnlinePlayers()) {
+                if (!other.equals(moderator) && !other.equals(suspect)) {
+                    other.hidePlayer(plugin, suspect);
+                }
+            }
+            moderator.showPlayer(plugin, suspect);
+        }
+
+        // 3. Notify suspect in chat with list of available services
+        MessageUtils.send(suspect, "<red><bold>ВЫ ВЫЗВАНЫ НА ПРОВЕРКУ ЧИТОВ!</bold></red>");
+        MessageUtils.send(suspect, "<yellow>Вам необходимо отправить контактные данные проверяющему персоналу:</yellow>");
+        for (ConfigManager.ContactService svc : plugin.getConfigManager().getCheatCheckServices().values()) {
+            MessageUtils.send(suspect, "<gray>• </gray><white>/" + svc.command() + " <значение></white> <gray>— отправить</gray> <gold>" + svc.name() + "</gold>");
+        }
         MessageUtils.send(suspect, "<yellow>У вас есть <white>" + (totalSeconds / 60) + "</white> мин на предоставление контактов. Выход с сервера наказуем баном!</yellow>");
-        String contactText = plugin.getConfigManager().getCheatCheckDiscordContactText();
-        MessageUtils.send(suspect, contactText);
 
         // Notify moderator
         MessageUtils.send(moderator, "<green>Вы начали проверку на читы игрока <white>" + suspect.getName() + "</white> (Таймер: <yellow>" + (totalSeconds / 60) + " мин</yellow>).</green>");
@@ -166,6 +204,16 @@ public class CheckManager implements Listener {
                 return;
             }
 
+            // If check is already in progress (contacts accepted), do not run timer or ban
+            if (session.getStatus() == CheckSession.CheckStatus.IN_PROGRESS) {
+                return;
+            }
+
+            // If timer is frozen waiting for moderator review, do not decrement
+            if (session.isTimerPaused()) {
+                return;
+            }
+
             int remaining = session.decrementSeconds();
             float progress = Math.max(0.0f, Math.min(1.0f, (float) remaining / (float) session.getTotalSeconds()));
             bossBar.progress(progress);
@@ -173,7 +221,7 @@ public class CheckManager implements Listener {
             String formattedTime = String.format("%02d:%02d", Math.max(0, remaining) / 60, Math.max(0, remaining) % 60);
 
             if (session.hasProvidedContact()) {
-                bossBar.name(MessageUtils.parse("<green><bold>ПРОВЕРКА НА ЧИТЫ</bold></green> <gray>| Данные получены (<gold>" + session.getProvidedService() + "</gold>)</gray>"));
+                bossBar.name(MessageUtils.parse("<yellow>Контакты отправлены модератору. Ожидание проверки...</yellow>"));
             } else {
                 bossBar.name(MessageUtils.parse("<red><bold>ПРОВЕРКА НА ЧИТЫ</bold></red> <gray>| Осталось: <yellow>" + formattedTime + "</yellow></gray>"));
             }
@@ -181,9 +229,9 @@ public class CheckManager implements Listener {
             Component subTitle = MessageUtils.parse("<yellow>Осталось: <white>" + formattedTime + "</white></yellow>");
             currentSuspect.showTitle(Title.title(mainTitle, subTitle, times));
 
-            // Repeat contact instructions every 30 seconds only if contact has NOT yet been provided
+            // Repeat contact instructions every 30 seconds only if contact has NOT yet been provided and not paused
             if (!session.hasProvidedContact() && remaining > 0 && remaining % 30 == 0) {
-                MessageUtils.send(currentSuspect, contactText);
+                MessageUtils.send(currentSuspect, "<yellow>Отправьте ваши контактные данные проверяющему персоналу!</yellow>");
             }
 
             if (remaining <= 0) {
@@ -271,7 +319,21 @@ public class CheckManager implements Listener {
 
         if (suspect != null && suspect.isOnline()) {
             suspect.clearTitle();
+            suspect.removePotionEffect(PotionEffectType.BLINDNESS);
+            for (Player other : Bukkit.getOnlinePlayers()) {
+                other.showPlayer(plugin, suspect);
+            }
+
             if (passed) {
+                // Teleportation on passed
+                if (plugin.getConfigManager().isCheatCheckTeleportationEnabled()) {
+                    Location finishSpawn = LocationUtils.deserialize(plugin.getConfigManager().getCheatCheckFinishSpawn());
+                    if (finishSpawn != null && finishSpawn.getWorld() != null) {
+                        suspect.teleport(finishSpawn);
+                    } else if (session != null && session.getOriginalSuspectLocation() != null && session.getOriginalSuspectLocation().getWorld() != null) {
+                        suspect.teleport(session.getOriginalSuspectLocation());
+                    }
+                }
                 MessageUtils.send(suspect, "<green>Проверка успешно завершена! Приятной игры.</green>");
             } else {
                 MessageUtils.send(suspect, "<red>Проверка на читы завершена со статусом: <bold>НЕ ПРОЙДЕНА</bold>.</red>");
@@ -279,6 +341,13 @@ public class CheckManager implements Listener {
         }
 
         if (moderator != null && moderator.isOnline()) {
+            if (session != null && session.getOriginalModeratorLocation() != null && session.getOriginalModeratorLocation().getWorld() != null) {
+                // Return moderator if original location is available
+                if (plugin.getConfigManager().isCheatCheckTeleportationEnabled() && plugin.getConfigManager().getCheatCheckModeratorSpawn() != null) {
+                    moderator.teleport(session.getOriginalModeratorLocation());
+                }
+            }
+
             if (passed) {
                 MessageUtils.send(moderator, "<green>Проверка игрока <white>" + suspectName + "</white> успешно завершена (Читы не обнаружены).</green>");
             } else {
@@ -314,6 +383,10 @@ public class CheckManager implements Listener {
                 Player target = Bukkit.getPlayer(modSession.getSuspectUuid());
                 if (target != null && target.isOnline()) {
                     target.clearTitle();
+                    target.removePotionEffect(PotionEffectType.BLINDNESS);
+                    for (Player other : Bukkit.getOnlinePlayers()) {
+                        other.showPlayer(plugin, target);
+                    }
                     MessageUtils.send(target, "<yellow>Модератор, проводивший проверку, покинул сервер. Проверка временно приостановлена.</yellow>");
                 }
             }
@@ -323,6 +396,12 @@ public class CheckManager implements Listener {
         // Suspect left during check!
         sessionsByModerator.remove(session.getModeratorUuid());
         session.stopTimer();
+
+        // Remove blindness and restore visibility
+        suspect.removePotionEffect(PotionEffectType.BLINDNESS);
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            other.showPlayer(plugin, suspect);
+        }
 
         boolean autoBan = plugin.getConfigManager().isCheatCheckAutoBanOnQuit();
         String durationStr = plugin.getConfigManager().getCheatCheckAutoBanDuration();
@@ -350,6 +429,38 @@ public class CheckManager implements Listener {
         String timeStr = LocalDateTime.now().format(DTF);
         plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_QUIT_BAN] Игрок %s вышел во время проверки модератором %s (Бан: %s)",
                 timeStr, suspect.getName(), modName, durationStr));
+    }
+
+    /**
+     * Completely protects suspect under check from any damage (mobs, players, fall, fire, etc.).
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            if (isUnderCheck(player.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    /**
+     * Hides active suspects from newly joined players if hide-cheater is enabled.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player joined = event.getPlayer();
+        if (!plugin.getConfigManager().isCheatCheckHideCheaterEnabled()) {
+            return;
+        }
+
+        for (CheckSession session : sessionsBySuspect.values()) {
+            if (!joined.getUniqueId().equals(session.getModeratorUuid()) && !joined.getUniqueId().equals(session.getSuspectUuid())) {
+                Player sus = Bukkit.getPlayer(session.getSuspectUuid());
+                if (sus != null && sus.isOnline()) {
+                    joined.hidePlayer(plugin, sus);
+                }
+            }
+        }
     }
 
     /**
@@ -414,7 +525,7 @@ public class CheckManager implements Listener {
     }
 
     /**
-     * Submits contact information (Discord / AnyDesk) from suspect to moderator.
+     * Submits contact information (Discord / AnyDesk / RustDesk) from suspect to moderator.
      */
     public boolean submitContact(Player suspect, String service, String contact) {
         if (suspect == null || !suspect.isOnline()) return false;
@@ -428,22 +539,32 @@ public class CheckManager implements Listener {
         session.setProvidedService(service);
         session.setProvidedContact(contact);
 
-        // Update BossBar immediately to show contacts received
+        // 1. Freeze timer and update BossBar
+        session.setTimerPaused(true);
         BossBar bb = session.getBossBar();
         if (bb != null) {
-            bb.name(MessageUtils.parse("<green><bold>ПРОВЕРКА НА ЧИТЫ</bold></green> <gray>| Данные получены (<gold>" + service + "</gold>)</gray>"));
+            bb.name(MessageUtils.parse("<yellow>Контакты отправлены модератору. Ожидание проверки...</yellow>"));
         }
 
         Player moderator = Bukkit.getPlayer(session.getModeratorUuid());
         String modName = session.getModeratorName();
 
-        // 1. Build clickable message for checking moderator
-        Component prefix = MessageUtils.parse("<dark_aqua>[ПРОВЕРКА]</dark_aqua> <yellow>" + suspect.getName() + "</yellow> предоставил <gold>" + service + "</gold>: ");
+        // 2. Build interactive message for checking moderator
+        Component prefix = MessageUtils.parse("<dark_aqua>[ПРОВЕРКА]</dark_aqua> <yellow>" + suspect.getName() + "</yellow> передал " + service + ": ");
         Component contactComp = Component.text(contact, NamedTextColor.AQUA)
-                .decorate(TextDecoration.UNDERLINED)
+                .decorate(TextDecoration.BOLD)
                 .clickEvent(ClickEvent.copyToClipboard(contact))
                 .hoverEvent(HoverEvent.showText(MessageUtils.parse("<gray>Нажмите, чтобы скопировать: <white>" + contact + "</white></gray>")));
-        Component fullModMessage = prefix.append(contactComp);
+
+        Component acceptBtn = MessageUtils.parse(" <green><bold>[ПРИНЯТЬ]</bold></green>")
+                .clickEvent(ClickEvent.runCommand("/moderatio check accept " + suspect.getName()))
+                .hoverEvent(HoverEvent.showText(MessageUtils.parse("<gray>Начать проверку, отключить таймер</gray>")));
+
+        Component declineBtn = MessageUtils.parse(" <red><bold>[ОТКЛОНИТЬ]</bold></red>")
+                .clickEvent(ClickEvent.runCommand("/moderatio check decline " + suspect.getName()))
+                .hoverEvent(HoverEvent.showText(MessageUtils.parse("<gray>Неверные данные, возобновить таймер</gray>")));
+
+        Component fullModMessage = prefix.append(contactComp).append(acceptBtn).append(declineBtn);
 
         if (moderator != null && moderator.isOnline()) {
             moderator.sendMessage(fullModMessage);
@@ -456,7 +577,7 @@ public class CheckManager implements Listener {
             }
         }
 
-        // 2. Notify suspect confirmation
+        // 3. Notify suspect confirmation
         MessageUtils.send(suspect, "<green>Ваши данные (" + service + ") переданы модератору! Ожидайте дальнейших инструкций.</green>");
 
         // Audit logging
@@ -469,18 +590,114 @@ public class CheckManager implements Listener {
     }
 
     /**
-     * Blocks all commands for suspect during active check, allowing only contact commands (/discord, /anydesk).
+     * Accepts suspect's contact details, switches session to IN_PROGRESS, hides BossBar timer.
+     */
+    public boolean acceptContact(CommandSender moderator, Player suspect) {
+        if (suspect == null || !suspect.isOnline()) {
+            MessageUtils.send(moderator, "<red>Игрок не найден или находится в оффлайне!</red>");
+            return false;
+        }
+
+        CheckSession session = sessionsBySuspect.get(suspect.getUniqueId());
+        if (session == null) {
+            MessageUtils.send(moderator, "<red>Игрок <white>" + suspect.getName() + "</white> не находится на проверке!</red>");
+            return false;
+        }
+
+        if (session.getStatus() == CheckSession.CheckStatus.IN_PROGRESS) {
+            MessageUtils.send(moderator, "<yellow>Контакты игрока <white>" + suspect.getName() + "</white> уже были приняты ранее!</yellow>");
+            return false;
+        }
+
+        session.setStatus(CheckSession.CheckStatus.IN_PROGRESS);
+        session.setTimerPaused(false);
+        session.hideBossBar();
+        suspect.clearTitle();
+
+        MessageUtils.send(suspect, "<green>Ваши контакты приняты! Проверка началась.</green>");
+        MessageUtils.send(moderator, "<green>Контакты игрока <white>" + suspect.getName() + "</white> приняты! Проверка продолжается без таймера.</green>");
+
+        plugin.getAuditService().logAction(moderator instanceof Player p ? p : null, "CHECK_CONTACT_ACCEPTED", suspect.getName(), null);
+        String timeStr = LocalDateTime.now().format(DTF);
+        plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_CONTACT_ACCEPTED] Модератор %s принял контакты игрока %s",
+                timeStr, moderator.getName(), suspect.getName()));
+        return true;
+    }
+
+    /**
+     * Declines suspect's contact details, resumes timer, asks suspect to re-send valid contacts.
+     */
+    public boolean declineContact(CommandSender moderator, Player suspect) {
+        if (suspect == null || !suspect.isOnline()) {
+            MessageUtils.send(moderator, "<red>Игрок не найден или находится в оффлайне!</red>");
+            return false;
+        }
+
+        CheckSession session = sessionsBySuspect.get(suspect.getUniqueId());
+        if (session == null) {
+            MessageUtils.send(moderator, "<red>Игрок <white>" + suspect.getName() + "</white> не находится на проверке!</red>");
+            return false;
+        }
+
+        session.setHasProvidedContact(false);
+        session.setTimerPaused(false);
+
+        BossBar bb = session.getBossBar();
+        if (bb != null) {
+            String formattedTime = String.format("%02d:%02d", Math.max(0, session.getRemainingSeconds()) / 60, Math.max(0, session.getRemainingSeconds()) % 60);
+            bb.name(MessageUtils.parse("<red><bold>ПРОВЕРКА НА ЧИТЫ</bold></red> <gray>| Осталось: <yellow>" + formattedTime + "</yellow></gray>"));
+        }
+
+        MessageUtils.send(suspect, "<red>Модератор отклонил ваши контакты (неверные данные). Отправьте корректные контакты, пока таймер не истёк!</red>");
+        MessageUtils.send(moderator, "<yellow>Контакты игрока <white>" + suspect.getName() + "</white> отклонены. Таймер возобновлен.</yellow>");
+
+        plugin.getAuditService().logAction(moderator instanceof Player p ? p : null, "CHECK_CONTACT_DECLINED", suspect.getName(), null);
+        String timeStr = LocalDateTime.now().format(DTF);
+        plugin.getAuditService().writeRawLog(String.format("[%s] [CHECK_CONTACT_DECLINED] Модератор %s отклонил контакты игрока %s",
+                timeStr, moderator.getName(), suspect.getName()));
+        return true;
+    }
+
+    /**
+     * Dynamically captures configured contact services and blocks unauthorized commands for suspect.
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
         if (isUnderCheck(player.getUniqueId())) {
-            String msg = event.getMessage().toLowerCase().trim();
-            if (msg.startsWith("/discord") || msg.startsWith("/anydesk") || msg.startsWith("/mdiscord") || msg.startsWith("/manydesk")) {
-                return; // Whitelist contact commands
+            String fullMessage = event.getMessage().trim();
+            String lower = fullMessage.toLowerCase();
+
+            // Check dynamically configured services
+            for (ConfigManager.ContactService svc : plugin.getConfigManager().getCheatCheckServices().values()) {
+                String cmdPrefix = "/" + svc.command().toLowerCase();
+                if (lower.equals(cmdPrefix) || lower.startsWith(cmdPrefix + " ")) {
+                    event.setCancelled(true);
+                    String[] parts = fullMessage.split("\\s+", 2);
+                    if (parts.length < 2 || parts[1].isBlank()) {
+                        MessageUtils.send(player, "<red>Использование: /" + svc.command() + " <ваш " + svc.name() + "></red>");
+                    } else {
+                        submitContact(player, svc.name(), parts[1].trim());
+                    }
+                    return;
+                }
             }
+
+            // Also check common aliases /mdiscord, /manydesk
+            if (lower.startsWith("/mdiscord") || lower.startsWith("/manydesk")) {
+                String[] parts = fullMessage.split("\\s+", 2);
+                String service = lower.startsWith("/mdiscord") ? "Discord" : "AnyDesk";
+                event.setCancelled(true);
+                if (parts.length < 2 || parts[1].isBlank()) {
+                    MessageUtils.send(player, "<red>Использование: " + parts[0] + " <значение></red>");
+                } else {
+                    submitContact(player, service, parts[1].trim());
+                }
+                return;
+            }
+
             event.setCancelled(true);
-            MessageUtils.send(player, "<red>Во время проверки команды заблокированы! Доступны только <white>/discord</white> и <white>/anydesk</white>.</red>");
+            MessageUtils.send(player, "<red>Во время проверки команды заблокированы!</red>");
         }
     }
 
@@ -502,6 +719,10 @@ public class CheckManager implements Listener {
             Player target = Bukkit.getPlayer(session.getSuspectUuid());
             if (target != null && target.isOnline()) {
                 target.clearTitle();
+                target.removePotionEffect(PotionEffectType.BLINDNESS);
+                for (Player other : Bukkit.getOnlinePlayers()) {
+                    other.showPlayer(plugin, target);
+                }
                 MessageUtils.send(target, "<yellow>Модератор вышел из Staff Mode. Проверка приостановлена.</yellow>");
             }
 
@@ -523,6 +744,10 @@ public class CheckManager implements Listener {
             Player target = Bukkit.getPlayer(session.getSuspectUuid());
             if (target != null && target.isOnline()) {
                 target.clearTitle();
+                target.removePotionEffect(PotionEffectType.BLINDNESS);
+                for (Player other : Bukkit.getOnlinePlayers()) {
+                    other.showPlayer(plugin, target);
+                }
             }
         }
         sessionsBySuspect.clear();

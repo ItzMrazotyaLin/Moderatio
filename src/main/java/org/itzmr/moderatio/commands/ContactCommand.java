@@ -43,10 +43,12 @@ public class ContactCommand implements CommandExecutor, TabCompleter {
             service = "Discord";
         } else if (label.equalsIgnoreCase("anydesk") || label.equalsIgnoreCase("manydesk")) {
             service = "AnyDesk";
+        } else if (label.equalsIgnoreCase("rustdesk") || label.equalsIgnoreCase("mrustdesk")) {
+            service = "RustDesk";
         }
 
         if (args.length < 1) {
-            String hint = service.equalsIgnoreCase("Discord") ? "<ваш Discord тег/ID>" : "<код подключения>";
+            String hint = "<ваш " + service + ">";
             MessageUtils.send(player, "<red>Использование: /" + label + " " + hint + "</red>");
             return true;
         }
