@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.itzmr.moderatio.Moderatio;
+import org.itzmr.moderatio.database.StaffLog;
 import org.itzmr.moderatio.utils.MessageUtils;
 
 import java.io.File;
@@ -134,6 +135,22 @@ public class StaffAuditService {
                 }
             }
         });
+
+        // Asynchronously persist to database
+        if (plugin.getDatabaseManager() != null) {
+            String details = (target != null && !target.isEmpty() ? "Target: " + target : "")
+                    + (parameters != null && !parameters.isEmpty() ? " | " + parameters : "");
+            StaffLog staffLog = new StaffLog(
+                    moderator.getUniqueId(),
+                    modName,
+                    actionType,
+                    details,
+                    worldName,
+                    x, y, z,
+                    System.currentTimeMillis()
+            );
+            plugin.getDatabaseManager().logStaffAction(staffLog);
+        }
     }
 
     /**

@@ -1,0 +1,31 @@
+# ==============================================================================
+#                      Moderatio Database Configuration
+# ==============================================================================
+
+# Настройки базы данных Moderatio
+# Тип хранилища: SQLITE (локальный файл) или MYSQL
+storage-type: "SQLITE"
+
+sqlite:
+  file: "database/data.db"
+
+mysql:
+  host: "localhost"
+  port: 3306
+  database: "moderatio"
+  username: "root"
+  password: ""
+  pool:
+    maximum-pool-size: 10
+    minimum-idle: 2
+    connection-timeout-ms: 30000
+
+# Период проверки и очистки истекших наказаний (в секундах)
+cleanup-interval-seconds: 60
+
+# Настройки очистки базы данных
+cleanup:
+  # Удалять ли старые неактивные записи и логи
+  enabled: true
+  # Хранить данные за последние N дней (по умолчанию 30)
+  retain-days: 30

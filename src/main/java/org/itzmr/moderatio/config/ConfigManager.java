@@ -20,9 +20,12 @@ import java.util.Set;
 public class ConfigManager {
 
     private final Moderatio plugin;
+    private File configFile;
     private FileConfiguration config;
     private File messagesFile;
     private FileConfiguration messages;
+    private File dbConfigFile;
+    private FileConfiguration dbConfig;
 
     public ConfigManager(Moderatio plugin) {
         this.plugin = plugin;
@@ -30,64 +33,24 @@ public class ConfigManager {
     }
 
     /**
-     * Loads or reloads all configuration files.
+     * Loads or reloads all configuration files after checking for structure updates.
      */
     public void load() {
-        // Save default config.yml
-        plugin.saveDefaultConfig();
+        // Smart synchronization of all configuration files with JAR defaults
+        ConfigUpdater.updateAll(plugin, "config.yml", "messages.yml", "db.yml");
+
+        // Load config.yml
         plugin.reloadConfig();
         this.config = plugin.getConfig();
-
-        // Merge missing default keys in config.yml
-        try (InputStream defConfigStream = plugin.getResource("config.yml")) {
-            if (defConfigStream != null) {
-                YamlConfiguration defConfig = YamlConfiguration.loadConfiguration(
-                        new InputStreamReader(defConfigStream, StandardCharsets.UTF_8)
-                );
-                this.config.setDefaults(defConfig);
-                boolean changed = false;
-                for (String key : defConfig.getKeys(true)) {
-                    if (!this.config.contains(key)) {
-                        this.config.set(key, defConfig.get(key));
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    plugin.saveConfig();
-                }
-            }
-        } catch (IOException e) {
-            plugin.getLogger().warning("Failed to check default config.yml keys: " + e.getMessage());
-        }
+        this.configFile = new File(plugin.getDataFolder(), "config.yml");
 
         // Load messages.yml
         this.messagesFile = new File(plugin.getDataFolder(), "messages.yml");
-        if (!messagesFile.exists()) {
-            plugin.saveResource("messages.yml", false);
-        }
         this.messages = YamlConfiguration.loadConfiguration(messagesFile);
 
-        // Merge missing default keys in messages.yml
-        try (InputStream defMessagesStream = plugin.getResource("messages.yml")) {
-            if (defMessagesStream != null) {
-                YamlConfiguration defMessages = YamlConfiguration.loadConfiguration(
-                        new InputStreamReader(defMessagesStream, StandardCharsets.UTF_8)
-                );
-                this.messages.setDefaults(defMessages);
-                boolean changed = false;
-                for (String key : defMessages.getKeys(true)) {
-                    if (!this.messages.contains(key)) {
-                        this.messages.set(key, defMessages.get(key));
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    this.messages.save(messagesFile);
-                }
-            }
-        } catch (IOException e) {
-            plugin.getLogger().warning("Failed to check default messages.yml keys: " + e.getMessage());
-        }
+        // Load db.yml
+        this.dbConfigFile = new File(plugin.getDataFolder(), "db.yml");
+        this.dbConfig = YamlConfiguration.loadConfiguration(dbConfigFile);
     }
 
     /**
@@ -103,6 +66,10 @@ public class ConfigManager {
 
     public FileConfiguration getMessages() {
         return messages;
+    }
+
+    public FileConfiguration getDbConfig() {
+        return dbConfig;
     }
 
     /**
@@ -178,6 +145,47 @@ public class ConfigManager {
             return config.getConfigurationSection("mute-templates").getKeys(false);
         }
         return Collections.emptySet();
+    }
+
+    /**
+     * Gets keys of configured warn templates.
+     */
+    public Set<String> getWarnTemplateKeys() {
+        if (config.isConfigurationSection("warn-templates")) {
+            return config.getConfigurationSection("warn-templates").getKeys(false);
+        }
+        return Collections.emptySet();
+    }
+
+    /**
+     * Gets warn expire duration string (e.g. '1d').
+     */
+    public String getWarnExpireDuration() {
+        return config.getString("warns.expire-duration", "1d");
+    }
+
+    /**
+     * Gets warn mode ('NOTIFICATION' or 'PUNISHMENT').
+     */
+    public String getWarnMode() {
+        return config.getString("warns.mode", "NOTIFICATION").toUpperCase();
+    }
+
+    /**
+     * Gets warn limit threshold for category.
+     */
+    public int getWarnLimitMax(String category) {
+        String cat = (category != null && category.equalsIgnoreCase("GAME")) ? "game" : "chat";
+        return config.getInt("warns.limits." + cat + ".max", 3);
+    }
+
+    /**
+     * Gets punishment duration for category warn escalation.
+     */
+    public String getWarnPunishDuration(String category) {
+        String cat = (category != null && category.equalsIgnoreCase("GAME")) ? "game" : "chat";
+        String def = "game".equals(cat) ? "1d" : "12h";
+        return config.getString("warns.limits." + cat + ".punish-duration", def);
     }
 
     /**
@@ -270,5 +278,19 @@ public class ConfigManager {
      */
     public String getCheatCheckFinishTriggerCommand() {
         return config.getString("cheat-check.finish-trigger-command", "uncheck");
+    }
+
+    /**
+     * Checks if automatic database cleanup of expired and inactive records is enabled.
+     */
+    public boolean isDbCleanupEnabled() {
+        return dbConfig != null && dbConfig.getBoolean("cleanup.enabled", true);
+    }
+
+    /**
+     * Gets the number of days to retain inactive records in the database.
+     */
+    public int getDbCleanupRetainDays() {
+        return dbConfig != null ? dbConfig.getInt("cleanup.retain-days", 30) : 30;
     }
 }

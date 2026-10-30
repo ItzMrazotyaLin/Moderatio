@@ -56,6 +56,7 @@ dialog:
 
   btn-ban: "<red>🔨 Наказать (Бан)"
   btn-mute: "<yellow>🔇 Замутить"
+  btn-warn: "<gold>📜 Выдать варн</gold>"
   btn-glow-on: "<gold>👁 Следить за игроком (Подсветка)"
   btn-glow-off: "<gray>👁 Следить за игроком (Выкл. подсветку)"
   btn-cheat-check: "<yellow>Проверка на читы</yellow>"
@@ -86,10 +87,36 @@ dialog:
   btn-troll-explosion: "<yellow>💥 Фейковый взрыв"
   btn-troll-lightning: "<gold>⚡ Фейковая молния"
 
+punishments:
+  ban-screen: |
+    <red><bold>ВЫ ЗАБЛОКИРОВАНЫ НА СЕРВЕРЕ</bold></red>
+    <gray>Причина: <white>{reason}</white></gray>
+    <gray>Заблокировал: <yellow>{moderator}</yellow></gray>
+    <gray>Срок: <aqua>{duration}</aqua></gray>
+    <gray>Истекает: <white>{expire_date}</white></gray>
+    <newline>
+    <dark_gray>ID наказания: #{id}</dark_gray>
+  chat-muted: "<red>Вам ограничен доступ к чату!</red> <gray>Причина: <white>{reason}</white> (осталось: <aqua>{remaining}</aqua>)</gray>"
+  warn-received: "<gold>Вам выдано предупреждение!</gold> <gray>Причина: <white>{reason}</white> (Предупреждений: <yellow>{count}/{max}</yellow>)</gray>"
+  unbanned-success: "<green>Игрок <white>{target}</white> успешно разблокирован!</green>"
+  unmuted-success: "<green>Игрок <white>{target}</white> успешно размучен!</green>"
+
 punishment:
   banned-success: "<green>Игрок <white>{target}</white> успешно заблокирован на <yellow>{duration}</yellow>! Причина: <red>{reason}</red>"
   muted-success: "<green>Наказание (мут) отправлено на выполнение для игрока <white>{target}</white>!"
   limit-reached: "<red>Вы исчерпали лимит наказаний ({limit} за {interval}с). Действие заблокировано!</red>"
+  ban-screen: |
+    <red><bold>ВЫ ЗАБЛОКИРОВАНЫ НА СЕРВЕРЕ</bold></red>
+    <gray>Причина: <white>{reason}</white></gray>
+    <gray>Заблокировал: <yellow>{moderator}</yellow></gray>
+    <gray>Срок: <aqua>{duration}</aqua></gray>
+    <gray>Истекает: <white>{expire_date}</white></gray>
+    <newline>
+    <dark_gray>ID наказания: #{id}</dark_gray>
+  chat-muted: "<red>Вам ограничен доступ к чату!</red> <gray>Причина: <white>{reason}</white> (осталось: <aqua>{remaining}</aqua>)</gray>"
+  warn-received: "<gold>Вам выдано предупреждение!</gold> <gray>Причина: <white>{reason}</white> (Предупреждений: <yellow>{count}/{max}</yellow>)</gray>"
+  unbanned-success: "<green>Игрок <white>{target}</white> успешно разблокирован!</green>"
+  unmuted-success: "<green>Игрок <white>{target}</white> успешно размучен!</green>"
   freeze-quit-alert: "<red>Игрок <white>{player}</white> вышел с сервера во время заморозки!</red>"
   freeze-rejoin-alert: "<red>Игрок <white>{player}</white> зашел на сервер и всё ещё находится в заморозке!</red>"
   freeze-join-warning: "<red>Вы находитесь в режиме заморозки модерацией! Перемещение заблокировано.</red>"

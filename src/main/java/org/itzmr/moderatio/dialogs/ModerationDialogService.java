@@ -20,6 +20,8 @@ import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.audit.StaffActionEntry;
 import org.itzmr.moderatio.staff.StaffManager;
 import org.itzmr.moderatio.utils.MessageUtils;
+import org.itzmr.moderatio.utils.TimeParser;
+import org.itzmr.moderatio.utils.TimeUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -297,6 +299,25 @@ public class ModerationDialogService {
                             return;
                         }
                         openMuteTemplatesDialog(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // 3. Warn Button
+        String warnRaw = plugin.getConfigManager().getMessage("dialog.btn-warn", false);
+        if (warnRaw.contains("Missing message")) {
+            warnRaw = "<gold>📜 Выдать варн</gold>";
+        }
+        Component warnLabel = MessageUtils.parse(warnRaw);
+        actions.add(ActionButton.builder(warnLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        if (staffManager.isPunishmentBlocked(p)) {
+                            sendPunishmentBlockedMessage(p);
+                            return;
+                        }
+                        openWarnTemplatesDialog(p, target);
                     }
                 }, CALLBACK_OPTIONS))
                 .build());
@@ -588,6 +609,128 @@ public class ModerationDialogService {
     }
 
     /**
+     * Opens the warn template selection dialog.
+     */
+    public void openWarnTemplatesDialog(Player moderator, Player target) {
+        if (!target.isOnline()) {
+            MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
+        Map<String, String> placeholders = createPlayerPlaceholders(target);
+
+        Component title = MessageUtils.parse("<gold>Выбор причины варна: " + target.getName() + "</gold>");
+        Component body = MessageUtils.parse("<gray>Выберите шаблон предупреждения или укажите свою причину:</gray>");
+
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+        List<ActionButton> actions = new ArrayList<>();
+
+        ConfigurationSection section = plugin.getConfig().getConfigurationSection("warn-templates");
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                String btnTitle = section.getString(key + ".title", key);
+                String reason = section.getString(key + ".reason", "Нарушение правил");
+                String cat = section.getString(key + ".category", "CHAT");
+
+                Component label = MessageUtils.parse(btnTitle);
+                actions.add(ActionButton.builder(label)
+                        .width(buttonWidth)
+                        .action(DialogAction.customClick((resp, aud) -> {
+                            if (aud instanceof Player p) {
+                                executeWarn(p, target, cat, reason);
+                            }
+                        }, CALLBACK_OPTIONS))
+                        .build());
+            }
+        }
+
+        // Custom reason button
+        Component customLabel = MessageUtils.parse("<gold>✍ Своя причина варна</gold>");
+        actions.add(ActionButton.builder(customLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openCustomWarnDialog(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // Back button
+        Component backLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-back", false));
+        ActionButton exitAction = ActionButton.builder(backLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openMainDialog(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(actions, exitAction, 1)));
+
+        moderator.showDialog(dialog);
+    }
+
+    /**
+     * Opens modal dialog with input field for custom warn reason.
+     */
+    public void openCustomWarnDialog(Player moderator, Player target) {
+        if (!target.isOnline()) {
+            MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
+        Component title = MessageUtils.parse("<gold>Своё предупреждение: " + target.getName() + "</gold>");
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+
+        Component reasonLabel = MessageUtils.parse("<gray>Причина предупреждения:</gray>");
+        TextDialogInput reasonInput = DialogInput.text("reason", reasonLabel)
+                .width(buttonWidth)
+                .labelVisible(true)
+                .initial("Нарушение правил")
+                .maxLength(128)
+                .build();
+
+        Component applyLabel = MessageUtils.parse("<green>Подтвердить и выдать варн</green>");
+        ActionButton applyButton = ActionButton.builder(applyLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        String inputReason = resp.getText("reason");
+                        String finalReason = (inputReason != null && !inputReason.trim().isEmpty())
+                                ? inputReason.trim()
+                                : "Нарушение правил";
+                        executeWarn(p, target, finalReason);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Component backLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-back", false));
+        ActionButton exitAction = ActionButton.builder(backLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openWarnTemplatesDialog(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .inputs(List.of(reasonInput))
+                        .build())
+                .type(DialogType.multiAction(List.of(applyButton), exitAction, 1)));
+
+        moderator.showDialog(dialog);
+    }
+
+    /**
      * Opens the trolling and quick action dialog.
      */
     public void openTrollingDialog(Player moderator, Player target) {
@@ -709,54 +852,21 @@ public class ModerationDialogService {
             return;
         }
 
-        String mode = plugin.getConfig().getString("punishments.mode",
-                plugin.getConfig().getString("ban-system.mode", "CONSOLE_COMMAND")).toUpperCase();
-        boolean isPerm = isPermanentDuration(durationStr);
-
-        if ("NATIVE".equals(mode)) {
-            Duration duration = isPerm ? null : parseDuration(durationStr);
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                target.ban(reason, duration, moderator.getName(), true);
-            });
-        } else {
-            boolean useSeparate = plugin.getConfig().getBoolean("punishments.use-separate-temp-commands", true);
-            String cmdTemplate;
-            if (isPerm) {
-                cmdTemplate = plugin.getConfig().getString("punishments.bans.perm-command", "ban {target} {reason}");
-            } else if (useSeparate) {
-                cmdTemplate = plugin.getConfig().getString("punishments.bans.temp-command", "tempban {target} {duration} {reason}");
-            } else {
-                cmdTemplate = plugin.getConfig().getString("punishments.bans.single-command",
-                        plugin.getConfig().getString("ban-system.console-command", "ban {target} {duration} {reason}"));
-            }
-
-            String rawCmd = cmdTemplate
-                    .replace("{target}", target.getName())
-                    .replace("{duration}", durationStr != null ? durationStr : "")
-                    .replace("{reason}", reason)
-                    .replace("{moderator}", moderator.getName());
-
-            final String finalCmd = rawCmd.startsWith("/") ? rawCmd.substring(1).trim() : rawCmd.trim();
-
-            Runnable task = () -> {
-                plugin.getLogger().info("[Moderatio] Executing ban command: " + finalCmd);
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-            };
-
-            if (Bukkit.isPrimaryThread()) {
-                task.run();
-            } else {
-                Bukkit.getScheduler().runTask(plugin, task);
-            }
+        long durationMillis;
+        try {
+            durationMillis = TimeParser.parseDuration(durationStr);
+        } catch (IllegalArgumentException e) {
+            MessageUtils.send(moderator, "<red>" + e.getMessage() + "</red>");
+            return;
         }
 
-        // Action audit and anti-abuse detection
-        plugin.getAuditService().logAction(moderator, "BAN", target.getName(), "Duration: " + durationStr + ", Reason: " + reason);
+        plugin.getPunishmentManager().ban(target.getUniqueId(), target.getName(), moderator.getUniqueId(), moderator.getName(), reason, durationMillis);
         plugin.getAuditService().checkPunishmentAbuse(moderator);
 
+        String durDisplay = (durationMillis <= 0) ? "Навсегда" : TimeUtils.formatDuration(durationMillis);
         Map<String, String> placeholders = Map.of(
                 "target", target.getName(),
-                "duration", durationStr != null ? durationStr : "perm",
+                "duration", durDisplay,
                 "reason", reason,
                 "moderator", moderator.getName()
         );
@@ -764,14 +874,14 @@ public class ModerationDialogService {
     }
 
     /**
-     * Executes mute logic for target player via console command.
+     * Executes mute logic for target player.
      */
     public void executeMute(Player moderator, Player target, String duration, String reason) {
         executeMute(moderator, target, null, duration, reason);
     }
 
     /**
-     * Executes mute logic for target player via console command.
+     * Executes mute logic for target player.
      */
     public void executeMute(Player moderator, Player target, String commandTemplate, String duration, String reason) {
         if (!target.isOnline()) {
@@ -784,55 +894,54 @@ public class ModerationDialogService {
             return;
         }
 
-        String template = commandTemplate;
-        if (template == null || template.isBlank()) {
-            boolean useSeparate = plugin.getConfig().getBoolean("punishments.use-separate-temp-commands", true);
-            boolean isPerm = isPermanentDuration(duration);
-            if (isPerm) {
-                template = plugin.getConfig().getString("punishments.mutes.perm-command", "mute {target} {reason}");
-            } else if (useSeparate) {
-                template = plugin.getConfig().getString("punishments.mutes.temp-command", "tempmute {target} {duration} {reason}");
-            } else {
-                template = plugin.getConfig().getString("punishments.mutes.single-command",
-                        plugin.getConfig().getString("mute-system.console-command", "mute {target} {duration} {reason}"));
-            }
+        long durationMillis;
+        try {
+            durationMillis = TimeParser.parseDuration(duration);
+        } catch (IllegalArgumentException e) {
+            MessageUtils.send(moderator, "<red>" + e.getMessage() + "</red>");
+            return;
         }
 
-        if (template == null || template.isBlank()) {
-            template = "tempmute {target} {duration} {reason}";
-        }
-
-        String rawCmd = template
-                .replace("{target}", target.getName())
-                .replace("{duration}", duration != null ? duration : "")
-                .replace("{reason}", reason)
-                .replace("{moderator}", moderator.getName());
-
-        final String finalCmd = rawCmd.startsWith("/") ? rawCmd.substring(1).trim() : rawCmd.trim();
-
-        // Must strictly run in the main synchronous thread
-        Runnable task = () -> {
-            plugin.getLogger().info("[Moderatio] Executing mute command: " + finalCmd);
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-        };
-
-        if (Bukkit.isPrimaryThread()) {
-            task.run();
-        } else {
-            Bukkit.getScheduler().runTask(plugin, task);
-        }
-
-        // Action audit and anti-abuse detection
-        plugin.getAuditService().logAction(moderator, "MUTE", target.getName(), "Duration: " + duration + ", Reason: " + reason);
+        plugin.getPunishmentManager().mute(target.getUniqueId(), target.getName(), moderator.getUniqueId(), moderator.getName(), reason, durationMillis);
         plugin.getAuditService().checkPunishmentAbuse(moderator);
 
+        String durDisplay = (durationMillis <= 0) ? "Навсегда" : TimeUtils.formatDuration(durationMillis);
         Map<String, String> placeholders = Map.of(
                 "target", target.getName(),
-                "duration", duration != null ? duration : "perm",
+                "duration", durDisplay,
                 "reason", reason,
                 "moderator", moderator.getName()
         );
         MessageUtils.send(moderator, plugin.getConfigManager().getMessage("punishment.muted-success", placeholders));
+    }
+
+    /**
+     * Executes warn logic for target player.
+     */
+    public void executeWarn(Player moderator, Player target, String reason) {
+        executeWarn(moderator, target, "CHAT", reason);
+    }
+
+    /**
+     * Executes warn logic for target player with category.
+     */
+    public void executeWarn(Player moderator, Player target, String category, String reason) {
+        if (!target.isOnline()) {
+            MessageUtils.send(moderator, plugin.getConfigManager().getMessage("general.player-not-found"));
+            return;
+        }
+
+        if (staffManager.isPunishmentBlocked(moderator)) {
+            sendPunishmentBlockedMessage(moderator);
+            return;
+        }
+
+        String cat = (category != null && category.equalsIgnoreCase("GAME")) ? "GAME" : "CHAT";
+        String finalReason = (reason != null && !reason.isBlank()) ? reason : "Предупреждение";
+        plugin.getPunishmentManager().warn(target.getUniqueId(), target.getName(), moderator.getUniqueId(), moderator.getName(), cat, finalReason);
+        plugin.getAuditService().checkPunishmentAbuse(moderator);
+
+        MessageUtils.send(moderator, "<green>Предупреждение игроку <white>" + target.getName() + "</white> успешно выдано! <gray>[<yellow>" + cat + "</yellow>] Причина: <white>" + finalReason + "</white></gray></green>");
     }
 
     /**

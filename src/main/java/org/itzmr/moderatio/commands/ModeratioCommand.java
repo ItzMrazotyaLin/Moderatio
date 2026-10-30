@@ -33,6 +33,9 @@ public class ModeratioCommand implements CommandExecutor, TabCompleter {
             }
 
             plugin.getConfigManager().reload();
+            if (plugin.getDatabaseManager() != null) {
+                plugin.getDatabaseManager().reload();
+            }
             MessageUtils.send(sender, plugin.getConfigManager().getMessage("general.reload-success"));
             return true;
         }

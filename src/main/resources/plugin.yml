@@ -5,10 +5,61 @@ api-version: '1.21'
 author: itzmr
 description: Modern Staff Mode & Moderation Dialog Plugin for Purpur 1.21.6
 
+commands:
+  staff:
+    description: Вход в режим модератора
+    permission: moderatio.staff
+    aliases: [sm, staffmode]
+  moderatio:
+    description: Главная команда управления Moderatio
+    aliases: [mod]
+  ban:
+    description: Заблокировать игрока
+    permission: moderatio.punish.ban
+    aliases: [mban]
+  unban:
+    description: Разблокировать игрока
+    permission: moderatio.punish.unban
+    aliases: [munban]
+  mute:
+    description: Заблокировать чат игроку
+    permission: moderatio.punish.mute
+    aliases: [mmute]
+  unmute:
+    description: Разблокировать чат игроку
+    permission: moderatio.punish.unmute
+    aliases: [munmute]
+  warn:
+    description: Выдать предупреждение игроку
+    permission: moderatio.punish.warn
+    aliases: [mwarn]
+  unwarn:
+    description: Снять последнее предупреждение с игрока
+    permission: moderatio.punish.unwarn
+    aliases: [munwarn]
+
 permissions:
   moderatio.staff:
     description: Allows entering Staff Mode and viewing moderation dialogs
     default: op
   moderatio.admin:
     description: Allows reloading and configuring the plugin
+    default: op
+  moderatio.punish.ban:
+    description: Allows banning players
+    default: op
+  moderatio.punish.unban:
+    description: Allows unbanning players
+    default: op
+  moderatio.punish.mute:
+    description: Allows muting players
+    default: op
+  moderatio.punish.unmute:
+    description: Allows unmuting players
+    default: op
+  moderatio.punish.warn:
+    description: Allows warning players
+    default: op
+  moderatio.punish.unwarn:
+    description: Allows unwarning players
     default: op

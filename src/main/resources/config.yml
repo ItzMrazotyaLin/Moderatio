@@ -1,12 +1,7 @@
 # ==============================================================================
 #                      Moderatio Configuration File
 #                     Purpur 1.21.6 / Paper Dialog API
-# ==============================================================================
-# Доступные плейсхолдеры для консольных команд наказаний:
-#   {target}    — ник целевого игрока-нарушителя.
-#   {duration}  — длительность наказания (например: 7d, 30d, 1h, perm).
-#   {reason}    — причина наказания.
-#   {moderator} — ник модератора, выдавшего наказание.
+#                 Встроенный собственный бэкенд наказаний
 # ==============================================================================
 
 # Список разработчиков проекта.
@@ -19,7 +14,7 @@ developers:
 
 # Система контроля подозрительной активности персонала (Anti-Abuse)
 anti-abuse:
-  # Лимит наказаний (баны/муты) за указанный интервал времени
+  # Лимит наказаний (баны/муты/варны) за указанный интервал времени
   punishment-limit: 2
   # Временное окно проверки в секундах
   check-interval-seconds: 60
@@ -57,18 +52,21 @@ cheat-check:
   # Префикс команды для отслеживания снятия с проверки в чате (без слеша)
   finish-trigger-command: "uncheck"
 
-# Маршрутизация исполнения наказаний (/ban vs /tempban, /mute vs /tempmute)
-punishments:
-  mode: "CONSOLE_COMMAND" # 'CONSOLE_COMMAND' или 'NATIVE' (для банов через Paper/Purpur API)
-  use-separate-temp-commands: true # true: использовать temp-команды для временных сроков
-  bans:
-    perm-command: "ban {target} {reason}"
-    temp-command: "tempban {target} {duration} {reason}"
-    single-command: "ban {target} {duration} {reason}"
-  mutes:
-    perm-command: "mute {target} {reason}"
-    temp-command: "tempmute {target} {duration} {reason}"
-    single-command: "mute {target} {duration} {reason}"
+# Система предупреждений (варнов) и автоматических санкций
+warns:
+  expire-duration: "1d"
+  # Режим работы при достижении лимита:
+  # NOTIFICATION - модераторам отправляется уведомление, ручная выдача (ПО УМОЛЧАНИЮ)
+  # PUNISHMENT - система сама автоматически выдает бан/мут
+  mode: "NOTIFICATION"
+  limits:
+    chat:
+      max: 3
+      punish-duration: "12h"
+    game:
+      max: 3
+      punish-duration: "1d"
+  reset-warns-on-action: true
 
 # Готовые шаблоны блокировок (отображаются в Dialog API)
 ban-templates:
@@ -111,6 +109,21 @@ mute-templates:
     title: "<dark_red>Реклама в чате"
     duration: "1d"
     reason: "Реклама сторонних ресурсов"
+
+# Готовые шаблоны варнов (предупреждений)
+warn-templates:
+  chat:
+    title: "<yellow>Нарушение правил чата (CHAT)"
+    category: "CHAT"
+    reason: "Нарушение правил общения в чате"
+  trolling:
+    title: "<gold>Помеха игрокам (GAME)"
+    category: "GAME"
+    reason: "Создание помех и токсичное поведение в игре"
+  suspicious:
+    title: "<red>Подозрительное поведение (GAME)"
+    category: "GAME"
+    reason: "Подозрительное поведение / отказ от проверки"
 
 # Настройки оформления диалогов Dialog API
 dialog:
