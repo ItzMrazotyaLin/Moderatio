@@ -13,7 +13,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -423,6 +426,143 @@ public class DatabaseManager {
             plugin.getLogger().log(Level.SEVERE, "Ошибка деактивации наказания в БД:", ex);
             return null;
         });
+    }
+
+    /**
+     * Retrieves all punishments issued by a staff member by UUID asynchronously.
+     */
+    public CompletableFuture<List<Punishment>> getPunishmentsByStaff(UUID staffUuid) {
+        if (staffUuid == null) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            List<Punishment> list = new ArrayList<>();
+            String sql = "SELECT id, type, target_uuid, target_name, staff_uuid, staff_name, reason, created_at, expires_at, active, category " +
+                    "FROM moderatio_punishments WHERE staff_uuid = ? ORDER BY created_at DESC;";
+            try {
+                execute(conn -> {
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setString(1, staffUuid.toString());
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                list.add(mapPunishment(rs));
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Failed to retrieve punishments by staff " + staffUuid + ": " + e.getMessage());
+            }
+            return list;
+        }, dbExecutor);
+    }
+
+    /**
+     * Retrieves all punishments issued by a staff member by name asynchronously.
+     */
+    public CompletableFuture<List<Punishment>> getPunishmentsByStaffName(String staffName) {
+        if (staffName == null || staffName.isBlank()) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            List<Punishment> list = new ArrayList<>();
+            String sql = "SELECT id, type, target_uuid, target_name, staff_uuid, staff_name, reason, created_at, expires_at, active, category " +
+                    "FROM moderatio_punishments WHERE LOWER(staff_name) = LOWER(?) ORDER BY created_at DESC;";
+            try {
+                execute(conn -> {
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setString(1, staffName.trim());
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                list.add(mapPunishment(rs));
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Failed to retrieve punishments by staff name " + staffName + ": " + e.getMessage());
+            }
+            return list;
+        }, dbExecutor);
+    }
+
+    /**
+     * Retrieves all punishments received by a target player asynchronously.
+     */
+    public CompletableFuture<List<Punishment>> getPunishmentsByTarget(UUID targetUuid) {
+        if (targetUuid == null) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            List<Punishment> list = new ArrayList<>();
+            String sql = "SELECT id, type, target_uuid, target_name, staff_uuid, staff_name, reason, created_at, expires_at, active, category " +
+                    "FROM moderatio_punishments WHERE target_uuid = ? ORDER BY created_at DESC;";
+            try {
+                execute(conn -> {
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setString(1, targetUuid.toString());
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                list.add(mapPunishment(rs));
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Failed to retrieve punishments by target " + targetUuid + ": " + e.getMessage());
+            }
+            return list;
+        }, dbExecutor);
+    }
+
+    /**
+     * Retrieves all unique staff names that have ever issued punishments or performed actions.
+     */
+    public CompletableFuture<Set<String>> getAllStaffNames() {
+        return CompletableFuture.supplyAsync(() -> {
+            Set<String> set = new LinkedHashSet<>();
+            String sql = "SELECT DISTINCT staff_name FROM moderatio_punishments UNION SELECT DISTINCT staff_name FROM moderatio_staff_logs;";
+            try {
+                execute(conn -> {
+                    try (Statement stmt = conn.createStatement();
+                         ResultSet rs = stmt.executeQuery(sql)) {
+                        while (rs.next()) {
+                            String name = rs.getString("staff_name");
+                            if (name != null && !name.isBlank() && !name.equalsIgnoreCase("Console")) {
+                                set.add(name);
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Failed to retrieve staff names: " + e.getMessage());
+            }
+            return set;
+        }, dbExecutor);
+    }
+
+    private Punishment mapPunishment(ResultSet rs) throws SQLException {
+        int id = rs.getInt("id");
+        PunishmentType type = PunishmentType.fromString(rs.getString("type"));
+        UUID tUuid = UUID.fromString(rs.getString("target_uuid"));
+        String tName = rs.getString("target_name");
+        UUID sUuid = UUID.fromString(rs.getString("staff_uuid"));
+        String sName = rs.getString("staff_name");
+        String reason = rs.getString("reason");
+        long createdAt = rs.getLong("created_at");
+        long expiresAt = rs.getLong("expires_at");
+        boolean active = rs.getBoolean("active");
+        String category = "CHAT";
+        try {
+            category = rs.getString("category");
+            if (category == null || category.isBlank()) category = "CHAT";
+        } catch (SQLException ignored) {
+        }
+        return new Punishment(id, type, tUuid, tName, sUuid, sName, reason, createdAt, expiresAt, active, category);
     }
 
     /**

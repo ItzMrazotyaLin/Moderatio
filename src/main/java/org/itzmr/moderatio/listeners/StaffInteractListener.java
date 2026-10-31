@@ -58,10 +58,9 @@ public class StaffInteractListener implements Listener {
         }
 
         Action action = event.getAction();
-        boolean isShiftRmbBlock = (action == Action.RIGHT_CLICK_BLOCK);
         boolean isShiftLmb = (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK);
 
-        if (isShiftRmbBlock || isShiftLmb) {
+        if (isShiftLmb) {
             event.setCancelled(true);
             plugin.getDialogService().openStaffMenuDialog(player);
         }

@@ -19,6 +19,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
+import org.itzmr.moderatio.database.Punishment;
+import org.itzmr.moderatio.database.PunishmentType;
+import java.util.LinkedHashSet;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import org.bukkit.util.Vector;
 import org.itzmr.moderatio.Moderatio;
 import org.itzmr.moderatio.audit.StaffActionEntry;
@@ -67,31 +73,23 @@ public class ModerationDialogService {
             return;
         }
 
-        Map<String, String> placeholders = new HashMap<>();
-        placeholders.put("player", moderator.getName());
-        placeholders.put("world", moderator.getWorld().getName());
-        placeholders.put("x", String.valueOf(moderator.getLocation().getBlockX()));
-        placeholders.put("y", String.valueOf(moderator.getLocation().getBlockY()));
-        placeholders.put("z", String.valueOf(moderator.getLocation().getBlockZ()));
-        placeholders.put("online", String.valueOf(Bukkit.getOnlinePlayers().size()));
-        placeholders.put("max_online", String.valueOf(Bukkit.getMaxPlayers()));
+        boolean isVanished = plugin.getVanishManager().isVanished(moderator);
+        String vanishStatus = isVanished ? "<green>ВКЛ</green>" : "<red>ВЫКЛ</red>";
 
-        Component title = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.title", placeholders, false));
-        Component body = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.body", placeholders, false));
+        Component title = MessageUtils.parse("<gradient:aqua:blue><bold>Меню персонала (Moderatio)</bold></gradient>");
+        Component body = MessageUtils.parse(
+                "<gray>Текущий мир: <white>" + moderator.getWorld().getName() + "</white> | " +
+                "X: <white>" + moderator.getLocation().getBlockX() + "</white> " +
+                "Y: <white>" + moderator.getLocation().getBlockY() + "</white> " +
+                "Z: <white>" + moderator.getLocation().getBlockZ() + "</white></gray>\n" +
+                "<gray>Статус скрытия (Vanish): " + vanishStatus + "</gray>"
+        );
 
         int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
-
         List<ActionButton> actions = new ArrayList<>();
 
         // 1. Vanish Toggle Button
-        boolean isVanished = plugin.getVanishManager().isVanished(moderator);
-        String vanishLabelKey = isVanished ? "vanish.btn-toggle-on" : "vanish.btn-toggle-off";
-        String defaultVanishText = isVanished ? "<green>👻 Режим скрытия: ВКЛ" : "<gray>👻 Режим скрытия: ВЫКЛ";
-        String vanishRaw = plugin.getConfigManager().getMessage(vanishLabelKey, false);
-        if (vanishRaw.contains("Missing message")) {
-            vanishRaw = defaultVanishText;
-        }
-        Component vanishLabel = MessageUtils.parse(vanishRaw);
+        Component vanishLabel = MessageUtils.parse(isVanished ? "<green>👻 Режим скрытия: ВКЛ</green>" : "<gray>👻 Режим скрытия: ВЫКЛ</gray>");
         actions.add(ActionButton.builder(vanishLabel)
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
@@ -102,25 +100,19 @@ public class ModerationDialogService {
                 }, CALLBACK_OPTIONS))
                 .build());
 
-        // 2. Staff Audit (Developers Only)
-        if (plugin.getAuditService().isDeveloper(moderator)) {
-            String auditRaw = plugin.getConfigManager().getMessage("dialog.btn-audit", false);
-            if (auditRaw.contains("Missing message")) {
-                auditRaw = "<gold>📋 Аудит состава";
-            }
-            Component auditLabel = MessageUtils.parse(auditRaw);
-            actions.add(ActionButton.builder(auditLabel)
-                    .width(buttonWidth)
-                    .action(DialogAction.customClick((resp, aud) -> {
-                        if (aud instanceof Player p) {
-                            openStaffAuditDialog(p);
-                        }
-                    }, CALLBACK_OPTIONS))
-                    .build());
-        }
+        // 2. My Punishments Button
+        Component myPunishmentsLabel = MessageUtils.parse("<gold>📖 Мои наказания</gold>");
+        actions.add(ActionButton.builder(myPunishmentsLabel)
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openMyPunishmentsGui(p, 0);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
         // 3. Exit Staff Mode Button
-        Component exitStaffLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("staff-menu.btn-exit", false));
+        Component exitStaffLabel = MessageUtils.parse("<red>🚪 Выйти из Staff Mode</red>");
         actions.add(ActionButton.builder(exitStaffLabel)
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
@@ -130,9 +122,31 @@ public class ModerationDialogService {
                 }, CALLBACK_OPTIONS))
                 .build());
 
+        // 4. Developers Extra Buttons
+        if (plugin.getAuditService().isDeveloper(moderator)) {
+            Component auditLabel = MessageUtils.parse("<aqua>📋 Журнал аудита персонала</aqua>");
+            actions.add(ActionButton.builder(auditLabel)
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openStaffAuditListGui(p, 0);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+
+            Component spawnsLabel = MessageUtils.parse("<light_purple>🧭 Спавны проверки</light_purple>");
+            actions.add(ActionButton.builder(spawnsLabel)
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openSpawnSettingsDialog(p);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
+        }
+
         // Close Button (exitAction)
-        Component closeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-close", false));
-        ActionButton exitAction = ActionButton.builder(closeLabel)
+        ActionButton exitAction = ActionButton.builder(MessageUtils.parse("<gray>Закрыть</gray>"))
                 .width(buttonWidth)
                 .build();
 
@@ -270,7 +284,7 @@ public class ModerationDialogService {
 
         Map<String, String> placeholders = createPlayerPlaceholders(target);
 
-        Component title = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.main-title", placeholders, false));
+        Component title = MessageUtils.parse("<red><bold>Управление игроком: " + target.getName() + "</bold></red>");
         String rawBody = plugin.getConfigManager().getMessage("dialog.main-body", placeholders, false);
         if (plugin.getCheckManager().isUnderCheck(target.getUniqueId()) && !rawBody.contains("НА ПРОВЕРКЕ")) {
             rawBody = "<red><bold>СТАТУС: НА ПРОВЕРКЕ</bold></red>\n\n" + rawBody;
@@ -278,12 +292,10 @@ public class ModerationDialogService {
         Component body = MessageUtils.parse(rawBody);
 
         int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
-
         List<ActionButton> actions = new ArrayList<>();
 
         // 1. Ban Button
-        Component banLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-ban", false));
-        actions.add(ActionButton.builder(banLabel)
+        actions.add(ActionButton.builder(MessageUtils.parse("<red>🔨 Заблокировать (Бан)</red>"))
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
@@ -297,8 +309,7 @@ public class ModerationDialogService {
                 .build());
 
         // 2. Mute Button
-        Component muteLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-mute", false));
-        actions.add(ActionButton.builder(muteLabel)
+        actions.add(ActionButton.builder(MessageUtils.parse("<gold>🔇 Замутить</gold>"))
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
@@ -312,12 +323,7 @@ public class ModerationDialogService {
                 .build());
 
         // 3. Warn Button
-        String warnRaw = plugin.getConfigManager().getMessage("dialog.btn-warn", false);
-        if (warnRaw.contains("Missing message")) {
-            warnRaw = "<gold>📜 Выдать варн</gold>";
-        }
-        Component warnLabel = MessageUtils.parse(warnRaw);
-        actions.add(ActionButton.builder(warnLabel)
+        actions.add(ActionButton.builder(MessageUtils.parse("<yellow>📜 Выдать варн</yellow>"))
                 .width(buttonWidth)
                 .action(DialogAction.customClick((resp, aud) -> {
                     if (aud instanceof Player p) {
@@ -332,37 +338,11 @@ public class ModerationDialogService {
 
         boolean isCheckingThisTarget = plugin.getCheckManager().isCheckingTarget(moderator, target);
 
-        // 3. Target Glowing Toggle Button (hidden if moderator is actively checking this target)
-        if (!isCheckingThisTarget) {
-            boolean glowing = plugin.getGlowingManager().isGlowing(moderator.getUniqueId(), target.getUniqueId());
-            String glowKey = glowing ? "dialog.btn-glow-off" : "dialog.btn-glow-on";
-            String glowDefault = glowing ? "<gray>👁 Следить за игроком (Выкл. подсветку)" : "<gold>👁 Следить за игроком (Подсветка)";
-            String glowRaw = plugin.getConfigManager().getMessage(glowKey, false);
-            if (glowRaw.contains("Missing message")) {
-                glowRaw = glowDefault;
-            }
-            Component glowLabel = MessageUtils.parse(glowRaw);
-            actions.add(ActionButton.builder(glowLabel)
-                    .width(buttonWidth)
-                    .action(DialogAction.customClick((resp, aud) -> {
-                        if (aud instanceof Player p) {
-                            plugin.getGlowingManager().toggleGlowing(p, target);
-                            openMainDialog(p, target);
-                        }
-                    }, CALLBACK_OPTIONS))
-                    .build());
-        }
-
         // 4. Cheat Check / Finish Check Button
         if (plugin.getConfigManager().isCheatCheckEnabled()) {
             if (isCheckingThisTarget) {
                 // Suspicious target is already under check by this moderator -> show "Снять с проверки"
-                String uncheckRaw = plugin.getConfigManager().getMessage("dialog.btn-cheat-uncheck", false);
-                if (uncheckRaw.contains("Missing message")) {
-                    uncheckRaw = "<green><bold>Снять с проверки</bold></green>";
-                }
-                Component uncheckLabel = MessageUtils.parse(uncheckRaw);
-                actions.add(ActionButton.builder(uncheckLabel)
+                actions.add(ActionButton.builder(MessageUtils.parse("<green><bold>Снять с проверки</bold></green>"))
                         .width(buttonWidth)
                         .action(DialogAction.customClick((resp, aud) -> {
                             if (aud instanceof Player p) {
@@ -373,12 +353,7 @@ public class ModerationDialogService {
                         .build());
             } else {
                 // Not yet checking -> show "Проверка на читы"
-                String checkRaw = plugin.getConfigManager().getMessage("dialog.btn-cheat-check", false);
-                if (checkRaw.contains("Missing message")) {
-                    checkRaw = "<yellow><bold>Проверка на читы</bold></yellow>";
-                }
-                Component checkLabel = MessageUtils.parse(checkRaw);
-                actions.add(ActionButton.builder(checkLabel)
+                actions.add(ActionButton.builder(MessageUtils.parse("<yellow><bold>Проверка на читы</bold></yellow>"))
                         .width(buttonWidth)
                         .action(DialogAction.customClick((resp, aud) -> {
                             if (aud instanceof Player p) {
@@ -390,7 +365,17 @@ public class ModerationDialogService {
             }
         }
 
-        // 5. Trolling Button (Exclusive to Developers - hidden if actively checking this target)
+        // 5. Target Punishments History Button
+        actions.add(ActionButton.builder(MessageUtils.parse("<aqua>📋 История наказаний</aqua>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openTargetHistoryGui(p, target.getUniqueId(), target.getName(), 0);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        // 6. Trolling Button (Exclusive to Developers - hidden if actively checking this target)
         if (!isCheckingThisTarget && staffManager.canTroll(moderator)) {
             Component trollLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-troll", false));
             actions.add(ActionButton.builder(trollLabel)
@@ -404,8 +389,7 @@ public class ModerationDialogService {
         }
 
         // Exit / Close button
-        Component closeLabel = MessageUtils.parse(plugin.getConfigManager().getMessage("dialog.btn-close", false));
-        ActionButton exitAction = ActionButton.builder(closeLabel)
+        ActionButton exitAction = ActionButton.builder(MessageUtils.parse("<gray>Закрыть</gray>"))
                 .width(buttonWidth)
                 .build();
 
@@ -625,142 +609,110 @@ public class ModerationDialogService {
             return;
         }
 
-        WarnMenuHolder holder = new WarnMenuHolder(target);
-        Inventory inv = Bukkit.createInventory(holder, 54, MessageUtils.parse("<dark_gray>Выбор варна: <gold>" + target.getName() + "</gold></dark_gray>"));
-        holder.setInventory(inv);
+        Component title = MessageUtils.parse("<gold><bold>Выдача предупреждения: " + target.getName() + "</bold></gold>");
+        Component body = MessageUtils.parse("<gray>Выберите категорию и причину нарушения:</gray>");
 
-        ItemStack glass = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray> </dark_gray>"), null);
-        ItemStack divider = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray>▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬</dark_gray>"), null);
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+        List<ActionButton> actions = new ArrayList<>();
 
-        // Fill background
-        for (int i = 0; i < 54; i++) {
-            inv.setItem(i, glass);
-        }
+        // Category CHAT Buttons
+        actions.add(ActionButton.builder(MessageUtils.parse("<yellow>💬 Чат: Спам / Флуд</yellow>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "CHAT", "Спам / Флуд");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Zone CHAT Header (Slot 4)
-        inv.setItem(4, createGuiItem(Material.WRITABLE_BOOK,
-                MessageUtils.parse("<yellow><bold>ЗОНА CHAT: Предупреждения общения</bold></yellow>"),
-                List.of(MessageUtils.parse("<gray>Нарушения правил общения в чате</gray>"))));
+        actions.add(ActionButton.builder(MessageUtils.parse("<red>💬 Чат: Оскорбления</red>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "CHAT", "Оскорбления");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Zone CHAT Templates
-        // Slot 10: "Спам / Флуд" (WRITABLE_BOOK)
-        inv.setItem(10, createGuiItem(Material.WRITABLE_BOOK,
-                MessageUtils.parse("<yellow><bold>Спам / Флуд</bold></yellow>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Спам и флуд в чате</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(10, "CHAT", "Спам и флуд в чате");
+        actions.add(ActionButton.builder(MessageUtils.parse("<gold>💬 Чат: Ненормативная лексика</gold>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "CHAT", "Ненормативная лексика");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Slot 12: "Оскорбления" (PAPER)
-        inv.setItem(12, createGuiItem(Material.PAPER,
-                MessageUtils.parse("<red><bold>Оскорбления</bold></red>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Оскорбление игроков и токсичное поведение</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(12, "CHAT", "Оскорбление игроков и токсичное поведение");
+        actions.add(ActionButton.builder(MessageUtils.parse("<yellow>💬 Чат: Капс</yellow>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "CHAT", "Капс");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Slot 14: "Капс" (WRITABLE_BOOK)
-        inv.setItem(14, createGuiItem(Material.WRITABLE_BOOK,
-                MessageUtils.parse("<gold><bold>Капс</bold></gold>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Злоупотребление верхним регистром (капс)</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(14, "CHAT", "Злоупотребление верхним регистром (капс)");
+        // Category GAME Buttons
+        actions.add(ActionButton.builder(MessageUtils.parse("<dark_red>⚔ Игра: Помеха игровому процессу</dark_red>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "GAME", "Помеха игровому процессу");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Slot 16: "Ненормативная лексика" (PAPER)
-        inv.setItem(16, createGuiItem(Material.PAPER,
-                MessageUtils.parse("<yellow><bold>Ненормативная лексика</bold></yellow>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>CHAT</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Ненормативная лексика и мат</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(16, "CHAT", "Ненормативная лексика и мат");
+        actions.add(ActionButton.builder(MessageUtils.parse("<dark_red>⚔ Игра: Тимкилл / Гриферство</dark_red>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "GAME", "Тимкилл / Гриферство");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Row 2 (slots 18-26): Divider
-        for (int i = 18; i <= 26; i++) {
-            inv.setItem(i, divider);
-        }
+        actions.add(ActionButton.builder(MessageUtils.parse("<gold>⚔ Игра: Багоюз</gold>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        executeWarn(p, target, "GAME", "Багоюз");
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
 
-        // Zone GAME Header (Slot 22 inside divider)
-        inv.setItem(22, createGuiItem(Material.SHIELD,
-                MessageUtils.parse("<red><bold>ЗОНА GAME: Предупреждения игры</bold></red>"),
-                List.of(MessageUtils.parse("<gray>Нарушения игрового процесса и взаимодействия</gray>"))));
-
-        // Zone GAME Templates
-        // Slot 29: "Помеха игре" (IRON_SWORD)
-        inv.setItem(29, createGuiItem(Material.IRON_SWORD,
-                MessageUtils.parse("<red><bold>Помеха игре</bold></red>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Создание помех игровому процессу</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(29, "GAME", "Создание помех игровому процессу");
-
-        // Slot 31: "Тимкилл / Грифинг" (SHIELD)
-        inv.setItem(31, createGuiItem(Material.SHIELD,
-                MessageUtils.parse("<dark_red><bold>Тимкилл / Грифинг</bold></dark_red>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Тимкилл, вредительство или грифинг</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(31, "GAME", "Тимкилл, вредительство или грифинг");
-
-        // Slot 33: "Багоюз" (IRON_SWORD)
-        inv.setItem(33, createGuiItem(Material.IRON_SWORD,
-                MessageUtils.parse("<gold><bold>Багоюз</bold></gold>"),
-                List.of(
-                        MessageUtils.parse("<gray>Категория: <white>GAME</white></gray>"),
-                        MessageUtils.parse("<dark_gray>Причина: Использование багов и недоработок сервера</dark_gray>"),
-                        Component.empty(),
-                        MessageUtils.parse("<green>▶ Нажмите для выдачи варна</green>")
-                )));
-        holder.setAction(33, "GAME", "Использование багов и недоработок сервера");
-
-        // Row 4 (slots 36-44): Divider
-        for (int i = 36; i <= 44; i++) {
-            inv.setItem(i, divider);
-        }
-
-        // Control buttons (Row 5)
-        // Slot 45: Back
-        inv.setItem(45, createGuiItem(Material.ARROW,
-                MessageUtils.parse("<white><bold>⬅ Назад</bold></white>"),
-                List.of(MessageUtils.parse("<gray>Вернуться в главное меню модерации</gray>"))));
-
-        // Slot 49: Custom reason - ONLY visible and active for developers!
+        // Only for developers: Custom reason
         if (plugin.getAuditService().isDeveloper(moderator)) {
-            inv.setItem(49, createGuiItem(Material.ANVIL,
-                    MessageUtils.parse("<gold><bold>✍ Своя причина варна</bold></gold>"),
-                    List.of(
-                            MessageUtils.parse("<gray>Ввести произвольную причину варна</gray>"),
-                            MessageUtils.parse("<aqua>[Только для разработчиков]</aqua>")
-                    )));
+            actions.add(ActionButton.builder(MessageUtils.parse("<aqua>✍ Своя причина</aqua>"))
+                    .width(buttonWidth)
+                    .action(DialogAction.customClick((resp, aud) -> {
+                        if (aud instanceof Player p) {
+                            openCustomWarnDialog(p, target);
+                        }
+                    }, CALLBACK_OPTIONS))
+                    .build());
         }
 
-        // Slot 53: Close
-        inv.setItem(53, createGuiItem(Material.BARRIER,
-                MessageUtils.parse("<red><bold>✖ Закрыть</bold></red>"),
-                List.of(MessageUtils.parse("<gray>Закрыть меню варнов</gray>"))));
+        // Cancel / Back Button (returns to target main dialog)
+        ActionButton exitAction = ActionButton.builder(MessageUtils.parse("<gray>Отмена</gray>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openMainDialog(p, target);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
 
-        moderator.openInventory(inv);
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(actions, exitAction, 1)));
+
+        moderator.showDialog(dialog);
     }
 
-    private ItemStack createGuiItem(Material material, Component name, List<Component> lore) {
+    public ItemStack createGuiItem(Material material, Component name, List<Component> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -1201,5 +1153,408 @@ public class ModerationDialogService {
             }
         }
         return Duration.ofDays(7);
+    }
+
+    /**
+     * Opens the general staff mode Chest GUI (SHIFT + click).
+     */
+    public void openSpawnSettingsDialog(Player developer) {
+        if (!developer.isOnline() || !plugin.getAuditService().isDeveloper(developer)) {
+            return;
+        }
+
+        Component title = MessageUtils.parse("<gradient:light_purple:blue><bold>Настройка спавнов проверки</bold></gradient>");
+
+        String chSpawn = plugin.getConfigManager().getCheatCheckCheaterSpawn();
+        String modSpawn = plugin.getConfigManager().getCheatCheckModeratorSpawn();
+        String finSpawn = plugin.getConfigManager().getCheatCheckFinishSpawn();
+
+        String bodyText = "<gray>Текущие точки комнат проверок на читы:</gray>\n\n" +
+                "<gray>• <white>cheater-spawn:</white> <yellow>" + (chSpawn != null ? chSpawn : "не задано") + "</yellow></gray>\n" +
+                "<gray>• <white>moderator-spawn:</white> <yellow>" + (modSpawn != null ? modSpawn : "не задано") + "</yellow></gray>\n" +
+                "<gray>• <white>finish-spawn:</white> <yellow>" + (finSpawn != null ? finSpawn : "не задано") + "</yellow></gray>\n\n" +
+                "<gray>Нажмите на кнопку ниже, чтобы привязать соответствующую точку к вашей текущей позиции.</gray>";
+
+        Component body = MessageUtils.parse(bodyText);
+        int buttonWidth = plugin.getConfig().getInt("dialog.button-width", 220);
+        List<ActionButton> actions = new ArrayList<>();
+
+        actions.add(ActionButton.builder(MessageUtils.parse("<red>🎯 Установить cheater-spawn</red>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        String locStr = org.itzmr.moderatio.utils.LocationUtils.serialize(p.getLocation());
+                        plugin.getConfigManager().setCheatCheckCheaterSpawn(locStr);
+                        MessageUtils.send(p, "<green>Точка <white>cheater-spawn</white> успешно сохранена: <yellow>" + locStr + "</yellow></green>");
+                        openSpawnSettingsDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        actions.add(ActionButton.builder(MessageUtils.parse("<yellow>🛡 Установить moderator-spawn</yellow>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        String locStr = org.itzmr.moderatio.utils.LocationUtils.serialize(p.getLocation());
+                        plugin.getConfigManager().setCheatCheckModeratorSpawn(locStr);
+                        MessageUtils.send(p, "<green>Точка <white>moderator-spawn</white> успешно сохранена: <yellow>" + locStr + "</yellow></green>");
+                        openSpawnSettingsDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        actions.add(ActionButton.builder(MessageUtils.parse("<green>🚪 Установить finish-spawn</green>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        String locStr = org.itzmr.moderatio.utils.LocationUtils.serialize(p.getLocation());
+                        plugin.getConfigManager().setCheatCheckFinishSpawn(locStr);
+                        MessageUtils.send(p, "<green>Точка <white>finish-spawn</white> успешно сохранена: <yellow>" + locStr + "</yellow></green>");
+                        openSpawnSettingsDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build());
+
+        ActionButton exitAction = ActionButton.builder(MessageUtils.parse("<gray>⬅ Назад в меню</gray>"))
+                .width(buttonWidth)
+                .action(DialogAction.customClick((resp, aud) -> {
+                    if (aud instanceof Player p) {
+                        openStaffMenuDialog(p);
+                    }
+                }, CALLBACK_OPTIONS))
+                .build();
+
+        Dialog dialog = Dialog.create(factory -> factory.empty()
+                .base(DialogBase.builder(title)
+                        .canCloseWithEscape(true)
+                        .body(List.of(DialogBody.plainMessage(body)))
+                        .build())
+                .type(DialogType.multiAction(actions, exitAction, 1)));
+
+        developer.showDialog(dialog);
+    }
+
+    public void openStaffAuditListGui(Player developer, int page) {
+        if (!developer.isOnline() || !plugin.getAuditService().isDeveloper(developer)) {
+            return;
+        }
+
+        plugin.getDatabaseManager().getAllStaffNames().thenAccept(dbStaff -> {
+            Set<String> allStaff = new LinkedHashSet<>(plugin.getAuditService().getAllKnownStaff());
+            allStaff.addAll(dbStaff);
+            List<String> sortedStaff = new ArrayList<>(allStaff);
+            sortedStaff.sort(String.CASE_INSENSITIVE_ORDER);
+
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!developer.isOnline()) return;
+
+                int itemsPerPage = 28;
+                int totalPages = Math.max(1, (int) Math.ceil((double) sortedStaff.size() / itemsPerPage));
+                int curPage = Math.max(0, Math.min(page, totalPages - 1));
+
+                StaffAuditListHolder holder = new StaffAuditListHolder(developer, sortedStaff, curPage, totalPages);
+                Inventory inv = Bukkit.createInventory(holder, 54, MessageUtils.parse("<dark_gray>Аудит персонала [Стр. " + (curPage + 1) + "/" + totalPages + "]</dark_gray>"));
+                holder.setInventory(inv);
+
+                ItemStack glass = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray> </dark_gray>"), null);
+                for (int i = 0; i < 54; i++) {
+                    inv.setItem(i, glass);
+                }
+
+                int[] innerSlots = {
+                        10, 11, 12, 13, 14, 15, 16,
+                        19, 20, 21, 22, 23, 24, 25,
+                        28, 29, 30, 31, 32, 33, 34,
+                        37, 38, 39, 40, 41, 42, 43
+                };
+
+                int startIndex = curPage * itemsPerPage;
+                for (int i = 0; i < innerSlots.length; i++) {
+                    int staffIndex = startIndex + i;
+                    if (staffIndex < sortedStaff.size()) {
+                        String staffName = sortedStaff.get(staffIndex);
+                        int slot = innerSlots[i];
+                        holder.mapStaff(slot, staffName);
+
+                        Player onlinePlayer = Bukkit.getPlayerExact(staffName);
+                        boolean isOnline = onlinePlayer != null && onlinePlayer.isOnline();
+                        boolean inStaffMode = isOnline && staffManager.isInStaffMode(onlinePlayer);
+                        boolean isDev = plugin.getAuditService().isDeveloperName(staffName);
+
+                        List<Component> lore = new ArrayList<>();
+                        lore.add(MessageUtils.parse(isOnline ? "<green>● В сети</green>" : "<dark_gray>● Не в сети</dark_gray>"));
+                        if (inStaffMode) {
+                            lore.add(MessageUtils.parse("<aqua>● Staff Mode активен</aqua>"));
+                        }
+                        if (isDev) {
+                            lore.add(MessageUtils.parse("<light_purple>★ Разработчик</light_purple>"));
+                        }
+                        lore.add(Component.empty());
+                        lore.add(MessageUtils.parse("<yellow>▶ Нажмите для просмотра наказаний</yellow>"));
+
+                        inv.setItem(slot, createSkullItem(staffName, MessageUtils.parse("<gold><bold>" + staffName + "</bold></gold>"), lore));
+                    }
+                }
+
+                // Navigation
+                if (curPage > 0) {
+                    inv.setItem(45, createGuiItem(Material.ARROW, MessageUtils.parse("<white><bold>⬅ Предыдущая страница</bold></white>"), null));
+                }
+                inv.setItem(48, createGuiItem(Material.BARRIER, MessageUtils.parse("<red><bold>⬅ Назад в меню персонала</bold></red>"), null));
+                inv.setItem(49, createGuiItem(Material.PAPER, MessageUtils.parse("<gold><bold>Страница " + (curPage + 1) + " из " + totalPages + "</bold></gold>"),
+                        List.of(MessageUtils.parse("<gray>Всего сотрудников: <white>" + sortedStaff.size() + "</white></gray>"))));
+                if (curPage < totalPages - 1) {
+                    inv.setItem(53, createGuiItem(Material.ARROW, MessageUtils.parse("<white><bold>Следующая страница ➡</bold></white>"), null));
+                }
+
+                developer.openInventory(inv);
+            });
+        });
+    }
+
+    /**
+     * Opens moderator's own punishments paginated Chest GUI.
+     */
+    public void openMyPunishmentsGui(Player moderator, int page) {
+        openPunishmentHistoryGui(PunishmentHistoryHolder.HistoryMode.MY_PUNISHMENTS, moderator, moderator.getUniqueId(), moderator.getName(), page);
+    }
+
+    /**
+     * Opens target player's punishment history paginated Chest GUI.
+     */
+    public void openTargetHistoryGui(Player moderator, UUID targetUuid, String targetName, int page) {
+        openPunishmentHistoryGui(PunishmentHistoryHolder.HistoryMode.TARGET_HISTORY, moderator, targetUuid, targetName, page);
+    }
+
+    /**
+     * Opens staff member's punishment history for developer audit.
+     */
+    public void openStaffMemberHistoryGui(Player developer, String staffName, int page) {
+        openPunishmentHistoryGui(PunishmentHistoryHolder.HistoryMode.STAFF_AUDIT, developer, null, staffName, page);
+    }
+
+    /**
+     * Generic paginated punishment history GUI.
+     */
+    public void openPunishmentHistoryGui(PunishmentHistoryHolder.HistoryMode mode, Player viewer, UUID filterUuid, String filterName, int page) {
+        if (!viewer.isOnline()) return;
+
+        CompletableFuture<List<Punishment>> queryFuture;
+        if (mode == PunishmentHistoryHolder.HistoryMode.MY_PUNISHMENTS) {
+            queryFuture = plugin.getDatabaseManager().getPunishmentsByStaff(viewer.getUniqueId());
+        } else if (mode == PunishmentHistoryHolder.HistoryMode.STAFF_AUDIT) {
+            queryFuture = plugin.getDatabaseManager().getPunishmentsByStaffName(filterName);
+        } else {
+            queryFuture = plugin.getDatabaseManager().getPunishmentsByTarget(filterUuid);
+        }
+
+        queryFuture.thenAccept(punishments -> {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!viewer.isOnline()) return;
+
+                int itemsPerPage = 28;
+                int totalPages = Math.max(1, (int) Math.ceil((double) punishments.size() / itemsPerPage));
+                int curPage = Math.max(0, Math.min(page, totalPages - 1));
+
+                String titleStr;
+                if (mode == PunishmentHistoryHolder.HistoryMode.MY_PUNISHMENTS) {
+                    titleStr = "<dark_gray>Мои наказания [Стр. " + (curPage + 1) + "/" + totalPages + "]</dark_gray>";
+                } else if (mode == PunishmentHistoryHolder.HistoryMode.STAFF_AUDIT) {
+                    titleStr = "<dark_gray>Аудит: " + filterName + " [Стр. " + (curPage + 1) + "/" + totalPages + "]</dark_gray>";
+                } else {
+                    titleStr = "<dark_gray>История: " + filterName + " [Стр. " + (curPage + 1) + "/" + totalPages + "]</dark_gray>";
+                }
+
+                PunishmentHistoryHolder holder = new PunishmentHistoryHolder(mode, viewer, filterUuid, filterName, punishments, curPage, totalPages);
+                Inventory inv = Bukkit.createInventory(holder, 54, MessageUtils.parse(titleStr));
+                holder.setInventory(inv);
+
+                ItemStack glass = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray> </dark_gray>"), null);
+                for (int i = 0; i < 54; i++) {
+                    inv.setItem(i, glass);
+                }
+
+                int[] innerSlots = {
+                        10, 11, 12, 13, 14, 15, 16,
+                        19, 20, 21, 22, 23, 24, 25,
+                        28, 29, 30, 31, 32, 33, 34,
+                        37, 38, 39, 40, 41, 42, 43
+                };
+
+                int startIndex = curPage * itemsPerPage;
+                for (int i = 0; i < innerSlots.length; i++) {
+                    int pIndex = startIndex + i;
+                    if (pIndex < punishments.size()) {
+                        Punishment p = punishments.get(pIndex);
+                        int slot = innerSlots[i];
+                        holder.mapPunishment(slot, p);
+
+                        boolean active = p.isActive() && !p.isExpired();
+                        Material mat;
+                        if (active) {
+                            if (p.getType() == PunishmentType.BAN) mat = Material.RED_CONCRETE;
+                            else if (p.getType() == PunishmentType.MUTE) mat = Material.ORANGE_CONCRETE;
+                            else mat = Material.YELLOW_CONCRETE;
+                        } else {
+                            mat = Material.GRAY_CONCRETE;
+                        }
+
+                        String typeName = switch (p.getType()) {
+                            case BAN -> "БАН";
+                            case MUTE -> "МУТ";
+                            case WARN -> "ВАРН";
+                        };
+
+                        Component displayName;
+                        if (active) {
+                            String color = switch (p.getType()) {
+                                case BAN -> "<red>";
+                                case MUTE -> "<gold>";
+                                case WARN -> "<yellow>";
+                            };
+                            String closeColor = switch (p.getType()) {
+                                case BAN -> "</red>";
+                                case MUTE -> "</gold>";
+                                case WARN -> "</yellow>";
+                            };
+                            displayName = MessageUtils.parse(color + "<bold>" + typeName + "</bold>" + closeColor + " <gray>•</gray> <white>" + p.getTargetName() + "</white>");
+                        } else {
+                            displayName = MessageUtils.parse("<gray><bold>" + typeName + "</bold> • " + p.getTargetName() + " <dark_gray>(Неактивно)</dark_gray></gray>");
+                        }
+
+                        List<Component> lore = new ArrayList<>();
+                        lore.add(MessageUtils.parse("<gray>Дата: <white>" + TimeUtils.formatDate(p.getCreatedAt()) + "</white></gray>"));
+                        lore.add(MessageUtils.parse("<gray>Тип: <white>" + typeName + "</white></gray>"));
+                        lore.add(MessageUtils.parse("<gray>Нарушитель: <yellow>" + p.getTargetName() + "</yellow></gray>"));
+                        lore.add(MessageUtils.parse("<gray>Модератор: <yellow>" + p.getStaffName() + "</yellow></gray>"));
+                        lore.add(MessageUtils.parse("<gray>Причина: <white>" + p.getReason() + "</white></gray>"));
+
+                        String durDisplay = p.isPermanent() ? "Навсегда" : TimeUtils.formatDuration(p.getExpiresAt() - p.getCreatedAt());
+                        lore.add(MessageUtils.parse("<gray>Срок: <white>" + durDisplay + "</white></gray>"));
+
+                        if (active) {
+                            lore.add(MessageUtils.parse("<green>● Статус: Активно</green>"));
+                        } else if (p.isExpired()) {
+                            lore.add(MessageUtils.parse("<dark_gray>● Статус: Истекло</dark_gray>"));
+                        } else {
+                            lore.add(MessageUtils.parse("<red>● Статус: Снято / Отменено</red>"));
+                        }
+                        lore.add(Component.empty());
+                        lore.add(MessageUtils.parse("<yellow>▶ Нажмите для подробностей</yellow>"));
+
+                        inv.setItem(slot, createGuiItem(mat, displayName, lore));
+                    }
+                }
+
+                // Controls
+                if (curPage > 0) {
+                    inv.setItem(45, createGuiItem(Material.ARROW, MessageUtils.parse("<white><bold>⬅ Назад</bold></white>"), null));
+                }
+
+                String backText = switch (mode) {
+                    case MY_PUNISHMENTS -> "<red><bold>⬅ Назад в меню</bold></red>";
+                    case STAFF_AUDIT -> "<red><bold>⬅ Назад к списку персонала</bold></red>";
+                    case TARGET_HISTORY -> "<red><bold>⬅ Назад к управлению игроком</bold></red>";
+                };
+                inv.setItem(48, createGuiItem(Material.BARRIER, MessageUtils.parse(backText), null));
+
+                inv.setItem(49, createGuiItem(Material.PAPER, MessageUtils.parse("<gold><bold>Страница " + (curPage + 1) + " из " + totalPages + "</bold></gold>"),
+                        List.of(MessageUtils.parse("<gray>Всего наказаний в базе: <white>" + punishments.size() + "</white></gray>"))));
+
+                if (curPage < totalPages - 1) {
+                    inv.setItem(53, createGuiItem(Material.ARROW, MessageUtils.parse("<white><bold>Вперед ➡</bold></white>"), null));
+                }
+
+                viewer.openInventory(inv);
+            });
+        });
+    }
+
+    /**
+     * Opens detailed punishment card GUI.
+     */
+    public void openPunishmentDetailGui(Player viewer, Punishment punishment, PunishmentHistoryHolder returnHolder) {
+        if (!viewer.isOnline() || punishment == null) return;
+
+        PunishmentDetailHolder holder = new PunishmentDetailHolder(viewer, punishment, returnHolder);
+        Inventory inv = Bukkit.createInventory(holder, 27, MessageUtils.parse("<dark_gray>Карточка наказания #" + punishment.getId() + "</dark_gray>"));
+        holder.setInventory(inv);
+
+        ItemStack glass = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, MessageUtils.parse("<dark_gray> </dark_gray>"), null);
+        for (int i = 0; i < 27; i++) {
+            inv.setItem(i, glass);
+        }
+
+        boolean active = punishment.isActive() && !punishment.isExpired();
+        String durDisplay = punishment.isPermanent() ? "Навсегда" : TimeUtils.formatDuration(punishment.getExpiresAt() - punishment.getCreatedAt());
+        String expireDisplay = punishment.isPermanent() ? "Навсегда" : TimeUtils.formatDate(punishment.getExpiresAt());
+
+        Component statusBadge;
+        if (active) {
+            statusBadge = MessageUtils.parse("<green><bold>● АКТИВНО</bold></green>");
+        } else if (punishment.isExpired()) {
+            statusBadge = MessageUtils.parse("<dark_gray><bold>● ИСТЕКЛО</bold></dark_gray>");
+        } else {
+            statusBadge = MessageUtils.parse("<red><bold>● ОТМЕНЕНО / СНЯТО</bold></red>");
+        }
+
+        List<Component> bookLore = new ArrayList<>();
+        bookLore.add(MessageUtils.parse("<gray>Нарушитель: <white>" + punishment.getTargetName() + "</white></gray>"));
+        bookLore.add(MessageUtils.parse("<dark_gray>UUID цели: " + (punishment.getTargetUuid() != null ? punishment.getTargetUuid().toString() : "-") + "</dark_gray>"));
+        bookLore.add(MessageUtils.parse("<gray>Модератор: <yellow>" + punishment.getStaffName() + "</yellow></gray>"));
+        bookLore.add(MessageUtils.parse("<dark_gray>UUID модератора: " + (punishment.getStaffUuid() != null ? punishment.getStaffUuid().toString() : "-") + "</dark_gray>"));
+        bookLore.add(MessageUtils.parse("<gray>Тип наказания: <white>" + punishment.getType().name() + "</white></gray>"));
+        if (punishment.getType() == PunishmentType.WARN && punishment.getCategory() != null) {
+            bookLore.add(MessageUtils.parse("<gray>Категория варна: <yellow>" + punishment.getCategory() + "</yellow></gray>"));
+        }
+        bookLore.add(MessageUtils.parse("<gray>Причина: <white>" + punishment.getReason() + "</white></gray>"));
+        bookLore.add(MessageUtils.parse("<gray>Дата выдачи: <white>" + TimeUtils.formatDate(punishment.getCreatedAt()) + "</white></gray>"));
+        bookLore.add(MessageUtils.parse("<gray>Точный срок: <white>" + durDisplay + "</white></gray>"));
+        bookLore.add(MessageUtils.parse("<gray>Дата окончания: <white>" + expireDisplay + "</white></gray>"));
+        bookLore.add(Component.empty());
+        bookLore.add(MessageUtils.parse("<gray>Статус: </gray>").append(statusBadge));
+
+        inv.setItem(13, createGuiItem(Material.BOOK, MessageUtils.parse("<gold><bold>Наказание #" + punishment.getId() + "</bold></gold>"), bookLore));
+
+        // Cancellation button if active
+        if (active) {
+            boolean isDev = plugin.getAuditService().isDeveloper(viewer);
+            boolean isOwner = punishment.getStaffUuid() != null && punishment.getStaffUuid().equals(viewer.getUniqueId());
+
+            List<Component> cancelLore = new ArrayList<>();
+            cancelLore.add(MessageUtils.parse("<gray>Досрочно прекратить действие наказания</gray>"));
+            cancelLore.add(MessageUtils.parse("<gray>и снять ограничения с игрока.</gray>"));
+            cancelLore.add(Component.empty());
+            if (isDev || isOwner) {
+                cancelLore.add(MessageUtils.parse("<green>▶ Нажмите для отмены наказания</green>"));
+            } else {
+                cancelLore.add(MessageUtils.parse("<dark_red>✖ Доступно только автору или разработчику</dark_red>"));
+            }
+
+            inv.setItem(11, createGuiItem(Material.LIME_DYE, MessageUtils.parse("<red><bold>✖ Отменить наказание</bold></red>"), cancelLore));
+        }
+
+        // Return button
+        inv.setItem(22, createGuiItem(Material.ARROW, MessageUtils.parse("<white><bold>⬅ Назад к списку</bold></white>"), List.of(
+                MessageUtils.parse("<gray>Вернуться к странице наказаний</gray>")
+        )));
+
+        viewer.openInventory(inv);
+    }
+
+    /**
+     * Helper to create a player skull ItemStack.
+     */
+    public ItemStack createSkullItem(String ownerName, Component name, List<Component> lore) {
+        ItemStack item = new ItemStack(Material.PLAYER_HEAD);
+        if (item.getItemMeta() instanceof SkullMeta meta) {
+            meta.setOwningPlayer(Bukkit.getOfflinePlayer(ownerName));
+            meta.displayName(name);
+            if (lore != null && !lore.isEmpty()) {
+                meta.lore(lore);
+            }
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 }

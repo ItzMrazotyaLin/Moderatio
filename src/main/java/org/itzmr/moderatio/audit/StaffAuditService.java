@@ -54,6 +54,32 @@ public class StaffAuditService {
     }
 
     /**
+     * Checks if a player name or UUID string is listed as a developer in config.yml.
+     */
+    public boolean isDeveloper(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        List<String> devs = plugin.getConfig().getStringList("developers");
+        if (devs.isEmpty()) {
+            return false;
+        }
+        for (String dev : devs) {
+            if (dev != null && dev.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Alias for checking developer by username.
+     */
+    public boolean isDeveloperName(String name) {
+        return isDeveloper(name);
+    }
+
+    /**
      * Checks if a player or sender is listed as a developer in config.yml.
      */
     public boolean isDeveloper(CommandSender sender) {

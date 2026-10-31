@@ -92,8 +92,16 @@ public class CheckManager implements Listener {
         return suspectId != null ? sessionsBySuspect.get(suspectId) : null;
     }
 
+    public CheckSession getActiveCheckBySuspect(UUID suspectId) {
+        return getSessionBySuspect(suspectId);
+    }
+
     public CheckSession getSessionByModerator(UUID moderatorId) {
         return moderatorId != null ? sessionsByModerator.get(moderatorId) : null;
+    }
+
+    public CheckSession getActiveCheckByModerator(UUID moderatorId) {
+        return getSessionByModerator(moderatorId);
     }
 
     public Map<UUID, CheckSession> getActiveSessions() {
@@ -484,43 +492,73 @@ public class CheckManager implements Listener {
     /**
      * Intercepts chat from suspect to isolate communication exclusively to staff.
      */
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onAsyncChat(AsyncChatEvent event) {
         Player sender = event.getPlayer();
+        UUID senderId = sender.getUniqueId();
 
-        // 1. If sender is the suspect under check
-        CheckSession suspectSession = getSessionBySuspect(sender.getUniqueId());
-        if (suspectSession != null) {
+        // 1. If sender is the checking moderator
+        CheckSession modSession = getActiveCheckByModerator(senderId);
+        if (modSession != null) {
+            // Cancel original event to prevent message leaking to vanilla/global server chat
             event.setCancelled(true);
+
+            Player suspect = Bukkit.getPlayer(modSession.getSuspectUuid());
             String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-            String formatted = "<gold>[ПРОВЕРКА]</gold> <yellow>" + sender.getName() + "</yellow>: <white>" + message + "</white>";
+
+            // Format message: <dark_aqua>[ПРОВЕРКА]</dark_aqua> <gold>{moderator}</gold><gray>:</gray> <white>{message}</white>
+            String formatted = "<dark_aqua>[ПРОВЕРКА]</dark_aqua> <gold>" + sender.getName() + "</gold><gray>:</gray> <white>" + message + "</white>";
             Component component = MessageUtils.parse(formatted);
 
-            sender.sendMessage(component);
-
-            Player moderator = Bukkit.getPlayer(suspectSession.getModeratorUuid());
-            if (moderator != null && moderator.isOnline()) {
-                moderator.sendMessage(component);
+            // Send to suspect
+            if (suspect != null && suspect.isOnline()) {
+                suspect.sendMessage(component);
             }
 
+            // Send to moderator himself
+            sender.sendMessage(component);
+
+            // Send to online developers with [CHECK-SPY] prefix
+            Component spyComponent = MessageUtils.parse("<dark_purple>[CHECK-SPY]</dark_purple> " + formatted);
             for (Player p : Bukkit.getOnlinePlayers()) {
-                if (p.equals(sender) || p.equals(moderator)) continue;
+                if (p.equals(sender) || p.equals(suspect)) continue;
                 if (plugin.getAuditService().isDeveloper(p)) {
-                    p.sendMessage(component);
+                    p.sendMessage(spyComponent);
                 }
             }
             return;
         }
 
-        // 2. If sender is the checking moderator, route their message with [ПРОВЕРКА] prefix to suspect as well
-        CheckSession modSession = getSessionByModerator(sender.getUniqueId());
-        if (modSession != null) {
-            Player suspect = Bukkit.getPlayer(modSession.getSuspectUuid());
-            if (suspect != null && suspect.isOnline()) {
-                String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-                Component formatted = MessageUtils.parse("<gold>[ПРОВЕРКА]</gold> <aqua>" + sender.getName() + "</aqua>: <white>" + message + "</white>");
-                suspect.sendMessage(formatted);
+        // 2. If sender is the suspect under check
+        CheckSession suspectSession = getActiveCheckBySuspect(senderId);
+        if (suspectSession != null) {
+            // Cancel original event to block vanilla/global chat duplication
+            event.setCancelled(true);
+
+            Player moderator = Bukkit.getPlayer(suspectSession.getModeratorUuid());
+            String message = PlainTextComponentSerializer.plainText().serialize(event.message());
+
+            // Format message: <dark_aqua>[ПРОВЕРКА]</dark_aqua> <yellow>{suspect}</yellow><gray>:</gray> <white>{message}</white>
+            String formatted = "<dark_aqua>[ПРОВЕРКА]</dark_aqua> <yellow>" + sender.getName() + "</yellow><gray>:</gray> <white>" + message + "</white>";
+            Component component = MessageUtils.parse(formatted);
+
+            // Send to checking moderator
+            if (moderator != null && moderator.isOnline()) {
+                moderator.sendMessage(component);
             }
+
+            // Send to suspect himself (so suspect sees his message without vanilla duplication)
+            sender.sendMessage(component);
+
+            // Send to online developers with [CHECK-SPY] prefix
+            Component spyComponent = MessageUtils.parse("<dark_purple>[CHECK-SPY]</dark_purple> " + formatted);
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.equals(sender) || p.equals(moderator)) continue;
+                if (plugin.getAuditService().isDeveloper(p)) {
+                    p.sendMessage(spyComponent);
+                }
+            }
+            return;
         }
     }
 

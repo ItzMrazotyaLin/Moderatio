@@ -27,10 +27,10 @@ import org.itzmr.moderatio.config.ConfigUpdater;
 import org.itzmr.moderatio.database.DatabaseManager;
 import org.itzmr.moderatio.dialogs.ModerationDialogService;
 import org.itzmr.moderatio.listeners.PunishmentListener;
+import org.itzmr.moderatio.listeners.StaffGuiListener;
 import org.itzmr.moderatio.listeners.StaffInteractListener;
 import org.itzmr.moderatio.listeners.StaffProtectionListener;
 import org.itzmr.moderatio.listeners.StaffWorldListener;
-import org.itzmr.moderatio.listeners.WarnMenuListener;
 import org.itzmr.moderatio.punishments.PunishmentManager;
 import org.itzmr.moderatio.staff.CheckManager;
 import org.itzmr.moderatio.staff.GlowingManager;
@@ -90,7 +90,7 @@ public final class Moderatio extends JavaPlugin {
         pm.registerEvents(new PunishmentListener(this), this);
         pm.registerEvents(this.vanishManager, this);
         pm.registerEvents(this.checkManager, this);
-        pm.registerEvents(new WarnMenuListener(this), this);
+        pm.registerEvents(new StaffGuiListener(this), this);
 
         // 5. Register Commands
         registerCommands();

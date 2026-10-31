@@ -115,6 +115,15 @@ public class StaffManager {
 
         String msg = plugin.getConfigManager().getMessage("staff-mode.enabled");
         MessageUtils.send(player, msg);
+
+        String instructions = """
+                <dark_aqua>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</dark_aqua>
+                <gradient:aqua:blue><bold>  MODERATIO | РЕЖИМ ПЕРСОНАЛА АКТИВИРОВАН</bold></gradient>
+                <gray>• <white>ПКМ по игроку</white> <gray>—</gray> Открыть меню управления нарушителем</gray>
+                <gray>• <white>SHIFT + ЛКМ</white> <gray>—</gray> Открыть главное меню модератора</gray>
+                <gray>• <white>/staff</white> <gray>—</gray> Выйти из режима с возвратом на исходную точку</gray>
+                <dark_aqua>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</dark_aqua>""";
+        MessageUtils.send(player, instructions);
     }
 
     /**

@@ -448,6 +448,57 @@ public class PunishmentManager {
     }
 
     /**
+     * Cancels an active punishment, updating memory caches, database status, and logging the action.
+     *
+     * @param punishment      the punishment to cancel
+     * @param cancelStaffUuid UUID of moderator performing the cancellation
+     * @param cancelStaffName Name of moderator performing the cancellation
+     * @return CompletableFuture completing when DB update finishes
+     */
+    public CompletableFuture<Void> cancelPunishment(Punishment punishment, UUID cancelStaffUuid, String cancelStaffName) {
+        if (punishment == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        punishment.setActive(false);
+        int punishmentId = punishment.getId();
+        UUID targetUuid = punishment.getTargetUuid();
+        PunishmentType type = punishment.getType();
+
+        // 1. Remove from memory caches
+        if (type == PunishmentType.BAN) {
+            activeBans.remove(targetUuid);
+        } else if (type == PunishmentType.MUTE) {
+            activeMutes.remove(targetUuid);
+            Player online = Bukkit.getPlayer(targetUuid);
+            if (online != null && online.isOnline()) {
+                String msg = plugin.getConfigManager().getMessage("punishments.unmute-target", false);
+                if (msg.contains("Missing message")) {
+                    msg = "<green>Вы были размучены! Соблюдайте правила сервера.</green>";
+                }
+                MessageUtils.send(online, msg);
+            }
+        } else if (type == PunishmentType.WARN) {
+            List<Punishment> list = activeWarns.get(targetUuid);
+            if (list != null) {
+                list.removeIf(w -> w.getId() == punishmentId);
+            }
+            Player online = Bukkit.getPlayer(targetUuid);
+            if (online != null && online.isOnline()) {
+                int remaining = (list != null) ? list.size() : 0;
+                MessageUtils.send(online, "<green>С вас снято предупреждение!</green> <gray>(Осталось варнов: <yellow>" + remaining + "</yellow>)</gray>");
+            }
+        }
+
+        // 2. Audit logging
+        String details = "Cancelled punishment #" + punishmentId + " (" + type + ") originally issued by " + punishment.getStaffName();
+        logAction(cancelStaffUuid, cancelStaffName, "CANCEL_" + type.name(), punishment.getTargetName(), details);
+
+        // 3. Deactivate in DB
+        return plugin.getDatabaseManager().deactivatePunishment(punishmentId);
+    }
+
+    /**
      * Formats MiniMessage ban screen component from ban punishment.
      */
     public Component formatBanScreen(Punishment ban) {
